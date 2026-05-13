@@ -67,21 +67,40 @@ function FaceCanvas({
                 const filesetResolver = await FilesetResolver.forVisionTasks(
                     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm"
                 );
-                const fl = await FaceLandmarker.createFromOptions(filesetResolver, {
-                    baseOptions: {
-                        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-                        delegate: "GPU",
-                    },
-                    outputFaceBlendshapes: false,
-                    runningMode: "VIDEO",
-                    numFaces: 1,
-                    minFaceDetectionConfidence: 0.5,
-                    minFacePresenceConfidence: 0.5,
-                    minTrackingConfidence: 0.5,
-                });
+                let fl: any;
+                // Try GPU first, fall back to CPU
+                try {
+                    fl = await FaceLandmarker.createFromOptions(filesetResolver, {
+                        baseOptions: {
+                            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+                            delegate: "GPU",
+                        },
+                        outputFaceBlendshapes: false,
+                        runningMode: "VIDEO",
+                        numFaces: 1,
+                        minFaceDetectionConfidence: 0.55,
+                        minFacePresenceConfidence: 0.55,
+                        minTrackingConfidence: 0.55,
+                    });
+                } catch {
+                    fl = await FaceLandmarker.createFromOptions(filesetResolver, {
+                        baseOptions: {
+                            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+                            delegate: "CPU",
+                        },
+                        outputFaceBlendshapes: false,
+                        runningMode: "VIDEO",
+                        numFaces: 1,
+                        minFaceDetectionConfidence: 0.55,
+                        minFacePresenceConfidence: 0.55,
+                        minTrackingConfidence: 0.55,
+                    });
+                    console.info("[FaceLandmarker] Using CPU delegate");
+                }
 
                 if (!alive) { fl.close(); return; }
                 fmRef.current = fl;
+                console.log("[FaceLandmarker] Initialized successfully");
 
                 const loop = (t: number) => {
                     if (!alive) return;
@@ -116,7 +135,9 @@ function FaceCanvas({
                         } else {
                             drawFaceMesh(ctx, lms, w, h, lms.length > 0);
                         }
-                    } catch { /* ignore per-frame errors */ }
+                    } catch (e) {
+                        console.warn("[FaceLandmarker] Frame error:", e);
+                    }
                 };
                 rafRef.current = requestAnimationFrame(loop);
             } catch (e) {
@@ -352,59 +373,73 @@ export default function FaceScanPage() {
 
     // ── Final multi-angle score computation ───────────────────────────────────
     const computeFinalScore = () => {
-        // Use best available front sample (prefer front2 as final calibration)
-        const frontLm = snapFront2.current.length >= 200 ? snapFront2.current
-            : snapFront1.current.length >= 200 ? snapFront1.current
-                : latestLms.current;
+        try {
+            // Use best available front sample (prefer front2 as final calibration)
+            const frontLm = snapFront2.current.length >= 200 ? snapFront2.current
+                : snapFront1.current.length >= 200 ? snapFront1.current
+                    : latestLms.current;
 
-        if (frontLm.length < 200) {
+            if (frontLm.length < 200) {
+                console.warn("[Compute] No valid face captured across phases.");
+                setPhase("idle");
+                setNoFace(true);
+                return;
+            }
+
+            const base = calculateScores(frontLm);
+            if (!base) {
+                console.warn("[Compute] calculateScores returned null.");
+                setPhase("idle");
+                setNoFace(true);
+                return;
+            }
+
+            // Enhance jaw score if we captured profiles
+            let jawBonus = 0;
+            if (snapLeft.current.length >= 200 || snapRight.current.length >= 200) {
+                const profileLm = snapLeft.current.length >= 200 ? snapLeft.current : snapRight.current;
+                const profileScore = calculateScores(profileLm);
+                if (profileScore) {
+                    const blendedJaw = parseFloat((base.jawline * 0.6 + profileScore.jawline * 0.4).toFixed(1));
+                    jawBonus = blendedJaw - base.jawline;
+                }
+            }
+
+            // Enhance symmetry if we have two front scans
+            let symBonus = 0;
+            if (snapFront1.current.length >= 200 && snapFront2.current.length >= 200) {
+                const s1 = calculateScores(snapFront1.current);
+                const s2 = calculateScores(snapFront2.current);
+                if (s1 && s2) {
+                    symBonus = ((s1.symmetry + s2.symmetry) / 2 - base.symmetry);
+                }
+            }
+
+            const enhancedJaw = parseFloat(Math.min(10, Math.max(1.5, base.jawline + jawBonus)).toFixed(1));
+            const enhancedSym = parseFloat(Math.min(10, Math.max(1.5, base.symmetry + symBonus)).toFixed(1));
+
+            // Recompute overall with enhanced values
+            // Ensure all values are strictly numbers using defaults if needed
+            const s = (val: any) => typeof val === "number" && !isNaN(val) ? val : 5.5;
+
+            const finalMetrics: FacialMetrics = {
+                ...base,
+                jawline: enhancedJaw,
+                symmetry: enhancedSym,
+                overall: parseFloat(((s(enhancedSym) + s(enhancedJaw) + s(base.eyeArea) + s(base.harmonics) + s(base.canthalTilt) + s(base.midfaceRatio) + s(base.philtrum)) / 7).toFixed(1)),
+            };
+
+            // Recalculate potential with new overall
+            const potBonus = parseFloat(Math.min(2.5, (10 - finalMetrics.overall) * 0.4 + (base.weaknesses.length * 0.3)).toFixed(1));
+            finalMetrics.potentialScore = parseFloat(Math.max(finalMetrics.overall + 0.3, Math.min(9.9, finalMetrics.overall + potBonus)).toFixed(1));
+
+            setScanResults(finalMetrics);
+            setPhase("finished");
+        } catch (e) {
+            console.error("[Compute] Critical scoring error:", e);
             setPhase("idle");
             setNoFace(true);
-            return;
         }
-
-        const base = calculateScores(frontLm);
-        if (!base) { setPhase("idle"); setNoFace(true); return; }
-
-        // Enhance jaw score if we captured profiles
-        // Profile view gives a far more accurate mandibular angle reading
-        let jawBonus = 0;
-        if (snapLeft.current.length >= 200 || snapRight.current.length >= 200) {
-            const profileLm = snapLeft.current.length >= 200 ? snapLeft.current : snapRight.current;
-            const profileScore = calculateScores(profileLm);
-            if (profileScore) {
-                // Blend: 40% profile jaw reading (more accurate for angle) + 60% front
-                const blendedJaw = parseFloat((base.jawline * 0.6 + profileScore.jawline * 0.4).toFixed(1));
-                jawBonus = blendedJaw - base.jawline; // can be + or -
-            }
-        }
-
-        // Enhance symmetry if we have two front scans
-        let symBonus = 0;
-        if (snapFront1.current.length >= 200 && snapFront2.current.length >= 200) {
-            const s1 = calculateScores(snapFront1.current)!;
-            const s2 = calculateScores(snapFront2.current)!;
-            // Average: reduces noise from a single frame
-            symBonus = ((s1.symmetry + s2.symmetry) / 2 - base.symmetry);
-        }
-
-        const enhancedJaw = parseFloat(Math.min(10, Math.max(4, base.jawline + jawBonus)).toFixed(1));
-        const enhancedSym = parseFloat(Math.min(10, Math.max(4, base.symmetry + symBonus)).toFixed(1));
-
-        // Recompute overall with enhanced values
-        const metrics: FacialMetrics = {
-            ...base,
-            jawline: enhancedJaw,
-            symmetry: enhancedSym,
-            overall: parseFloat(((enhancedSym + enhancedJaw + base.eyeArea + base.harmonics + (base.canthalTilt ?? 7) + (base.midfaceRatio ?? 7) + (base.philtrum ?? 7)) / 7).toFixed(1)),
-        };
-
-        // Recalculate potential with new overall
-        const potBonus = parseFloat(Math.min(2.5, (10 - metrics.overall) * 0.4 + (base.weaknesses.length * 0.3)).toFixed(1));
-        metrics.potentialScore = parseFloat(Math.max(metrics.overall + 0.5, Math.min(9.9, metrics.overall + potBonus)).toFixed(1));
-
-        setScanResults(metrics);
-        setPhase("finished");
     };
 
     const isScanning = ["front1", "left", "right", "front2"].includes(phase);
