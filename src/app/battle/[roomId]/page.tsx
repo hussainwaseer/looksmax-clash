@@ -412,6 +412,9 @@ export default function BattlePage() {
         socket.on("opponent-score", onOppScore);
         socket.on("player-left", onPlayerLeft);
 
+        // Sync room state on mount
+        socket.emit("join-room", roomId);
+
         return () => {
             socket.off("player-joined", onPlayerJoined);
             socket.off("joined-room-info", onJoinedInfo);

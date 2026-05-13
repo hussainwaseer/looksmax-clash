@@ -61,7 +61,6 @@ app.prepare().then(() => {
             rooms.set(roomId, {
                 players: [{ id: socket.id, ready: false, peerConnected: false }],
                 status: 'waiting',
-                offerId: socket.id, // Creator = offerer
             });
             socket.join(roomId);
             socket.emit('room-created', roomId);
@@ -79,32 +78,41 @@ app.prepare().then(() => {
 
             const room = rooms.get(roomId);
 
-            if (room.players.length >= 2) {
-                socket.emit('room-error', 'Room is full');
-                return;
+            // Check if player is already in this room
+            const playerIndex = room.players.findIndex(p => p.id === socket.id);
+            if (playerIndex === -1) {
+                if (room.players.length >= 2) {
+                    socket.emit('room-error', 'Room is full');
+                    return;
+                }
+                room.players.push({ id: socket.id, ready: false, peerConnected: false });
             }
 
-            room.players.push({ id: socket.id, ready: false, peerConnected: false });
             socket.join(roomId);
 
+            // Send info to the joiner immediately
+            // Offerer is always the first player in the room
+            const offerId = room.players[0].id;
             socket.emit('joined-room-info', {
                 roomId,
                 playerCount: room.players.length,
                 status: room.status,
-                isOfferer: false,
+                isOfferer: offerId === socket.id,
             });
 
+            // Broadcast update to the whole room
             io.to(roomId).emit('player-joined', {
                 roomId,
                 playerCount: room.players.length,
             });
 
-            console.log(`[Server] ${socket.id} joined room ${roomId} (${room.players.length}/2)`);
+            process.stdout.write(`[Server] ${socket.id} joined room ${roomId} (${room.players.length}/2)\n`);
 
             if (room.players.length === 2) {
+                // IMPORTANT: Re-emitting these ensures sync even if events were missed during navigation
                 io.to(roomId).emit('room-ready');
-                // Kick off WebRTC immediately so by the time faces are detected, connection is live
-                io.to(room.offerId).emit('should-create-offer', { roomId });
+                // The first player is always the offerer
+                io.to(offerId).emit('should-create-offer', { roomId });
             }
         });
 
