@@ -117,14 +117,11 @@ export async function downloadMoggingCard(metrics: FacialMetrics, userPhoto?: st
     ctx.fillText(metrics.overall.toFixed(1), donutX, donutY + 20);
 
     // Rank & Potential Achievement
-    ctx.textAlign = "left";
     const rankText = getRankLabel(metrics.overall).toUpperCase();
     drawTextFit(ctx, rankText, donutX + 160, donutY - 5, cardW - 360, "italic 900 84px Inter, sans-serif", isElite ? "#10b981" : "#ffffff");
 
-    ctx.font = "900 32px Inter, sans-serif";
-    ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
-    ctx.letterSpacing = "2px";
-    ctx.fillText(`POTENTIAL SCORE: ${metrics.potentialScore}`, donutX + 160, donutY + 55);
+    const potText = `POTENTIAL SCORE: ${metrics.potentialScore}`;
+    drawTextFit(ctx, potText, donutX + 160, donutY + 55, cardW - 360, "900 32px Inter, sans-serif", "rgba(255, 255, 255, 0.4)", "left", "2px");
 
     // ─── 4. Metrics Grid (2x3) ───
     const gridY = scoreCardY + scoreCardH + 40;
@@ -185,11 +182,9 @@ export async function downloadMoggingCard(metrics: FacialMetrics, userPhoto?: st
     ctx.fillRect(0, footerY, width, 140);
     ctx.restore();
 
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#000000";
-    ctx.font = "900 48px Inter, sans-serif";
-    ctx.letterSpacing = "6px";
-    ctx.fillText(`TOP ${100 - pct}% GLOBAL CANDIDATE`, width / 2, footerY + 86);
+    // Achievement Text with Fitting
+    const achievementText = `TOP ${100 - pct}% GLOBAL CANDIDATE`;
+    drawTextFit(ctx, achievementText, width / 2, footerY + 86, width - 100, "900 48px Inter, sans-serif", "#000000", "center", "6px");
 
     // Footer Branding
     ctx.font = "900 24px Inter, sans-serif";
@@ -227,13 +222,17 @@ function drawAmbientGlow(ctx: CanvasRenderingContext2D, x: number, y: number, r:
     ctx.fillRect(x - r, y - r, r * 2, r * 2);
 }
 
-function drawTextFit(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, font: string, color: string) {
+function drawTextFit(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, font: string, color: string, align: CanvasTextAlign = "left", spacing: string = "0px") {
     ctx.font = font;
+    ctx.textAlign = align;
+    ctx.letterSpacing = spacing;
+
     let metrics = ctx.measureText(text);
-    let fontSize = parseInt(font.match(/\d+/)![0]);
+    let fontSizeMatch = font.match(/(\d+)px/);
+    let fontSize = fontSizeMatch ? parseInt(fontSizeMatch[1]) : 32;
     let currentFont = font;
 
-    while (metrics.width > maxWidth && fontSize > 12) {
+    while (metrics.width > maxWidth && fontSize > 14) {
         fontSize -= 2;
         currentFont = font.replace(/\d+px/, `${fontSize}px`);
         ctx.font = currentFont;
@@ -242,6 +241,7 @@ function drawTextFit(ctx: CanvasRenderingContext2D, text: string, x: number, y: 
 
     ctx.fillStyle = color;
     ctx.fillText(text, x, y);
+    ctx.letterSpacing = "0px"; // Reset
 }
 
 function getMetricColor(val: number, opacity: string) {
