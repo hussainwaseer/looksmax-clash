@@ -33,7 +33,7 @@ export async function downloadMoggingCard(metrics: FacialMetrics, userPhoto?: st
     drawAmbientGlow(ctx, width / 2, height, 1200, "rgba(168, 85, 247, 0.03)");
 
     // ─── 2. Top Section: User Photo (Circular Mask) ───
-    const topMargin = 120;
+    const topMargin = 100;
 
     // Header Label
     ctx.font = "900 32px Inter, sans-serif";
@@ -45,7 +45,7 @@ export async function downloadMoggingCard(metrics: FacialMetrics, userPhoto?: st
     // Photo Centerpiece
     const photoRadius = 240;
     const photoX = width / 2;
-    const photoY = topMargin + 320;
+    const photoY = topMargin + 280;
 
     // Outer Glow Border
     const borderGrad = ctx.createLinearGradient(photoX - photoRadius, photoY - photoRadius, photoX + photoRadius, photoY + photoRadius);
@@ -87,8 +87,8 @@ export async function downloadMoggingCard(metrics: FacialMetrics, userPhoto?: st
     ctx.restore();
 
     // ─── 3. Overall Score Card (Frosted Glass) ───
-    const scoreCardY = photoY + photoRadius + 100;
-    const scoreCardH = 300;
+    const scoreCardY = photoY + photoRadius + 60;
+    const scoreCardH = 260;
     const cardMargin = 80;
     const cardW = width - cardMargin * 2;
 
@@ -112,21 +112,22 @@ export async function downloadMoggingCard(metrics: FacialMetrics, userPhoto?: st
 
     // Score Text
     ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
     ctx.fillStyle = "#ffffff";
     ctx.font = "900 82px Inter, sans-serif";
-    ctx.fillText(metrics.overall.toFixed(1), donutX, donutY + 20);
+    ctx.fillText(metrics.overall.toFixed(1), donutX, donutY + 10);
 
     // Rank & Potential Achievement
     const rankText = getRankLabel(metrics.overall).toUpperCase();
-    drawTextFit(ctx, rankText, donutX + 160, donutY - 5, cardW - 360, "italic 900 84px Inter, sans-serif", isElite ? "#10b981" : "#ffffff");
+    drawTextFit(ctx, rankText, donutX + 160, donutY - 20, cardW - 360, "italic 900 84px Inter, sans-serif", isElite ? "#10b981" : "#ffffff", "left", "0px", "middle");
 
     const potText = `POTENTIAL SCORE: ${metrics.potentialScore}`;
-    drawTextFit(ctx, potText, donutX + 160, donutY + 55, cardW - 360, "900 32px Inter, sans-serif", "rgba(255, 255, 255, 0.4)", "left", "2px");
+    drawTextFit(ctx, potText, donutX + 160, donutY + 45, cardW - 360, "900 32px Inter, sans-serif", "rgba(255, 255, 255, 0.4)", "left", "2px", "middle");
 
     // ─── 4. Metrics Grid (2x3) ───
-    const gridY = scoreCardY + scoreCardH + 40;
+    const gridY = scoreCardY + scoreCardH + 30;
     const itemW = (cardW - 30) / 2;
-    const itemH = 210;
+    const itemH = 180;
     const items = [
         { label: "JAWLINE", val: metrics.jawline, status: metrics.jawline >= 8.0 ? "SHARP" : metrics.jawline >= 6.5 ? "STRONG" : "NORMAL" },
         { label: "SYMMETRY", val: metrics.symmetry, status: metrics.symmetry >= 8.0 ? "ELITE" : metrics.symmetry >= 6.5 ? "STEADY" : "AVERAGE" },
@@ -140,7 +141,7 @@ export async function downloadMoggingCard(metrics: FacialMetrics, userPhoto?: st
         const col = i % 2;
         const row = Math.floor(i / 2);
         const x = cardMargin + col * (itemW + 30);
-        const y = gridY + row * (itemH + 30);
+        const y = gridY + row * (itemH + 25);
 
         drawGlassCard(ctx, x, y, itemW, itemH, 40);
 
@@ -154,13 +155,13 @@ export async function downloadMoggingCard(metrics: FacialMetrics, userPhoto?: st
 
         // Label
         ctx.textAlign = "left";
-        drawTextFit(ctx, item.label, x + 30, y + 105, itemW - 60, "900 32px Inter, sans-serif", "rgba(255,255,255,0.3)");
+        drawTextFit(ctx, item.label, x + 30, y + 90, itemW - 60, "900 30px Inter, sans-serif", "rgba(255,255,255,0.3)", "left", "0px", "middle");
 
         // Status
-        drawTextFit(ctx, item.status, x + 30, y + 155, itemW - 60, " italic 900 38px Inter, sans-serif", "#ffffff");
+        drawTextFit(ctx, item.status, x + 30, y + 130, itemW - 60, " italic 900 36px Inter, sans-serif", "#ffffff", "left", "0px", "middle");
 
         // Progress Bar
-        const barY = y + 180;
+        const barY = y + 158;
         const barW = itemW - 60;
         ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
         ctx.beginPath(); ctx.roundRect(x + 30, barY, barW, 6, 3); ctx.fill();
@@ -169,7 +170,7 @@ export async function downloadMoggingCard(metrics: FacialMetrics, userPhoto?: st
     });
 
     // ─── 5. Achievement Badge Section ───
-    const footerY = height - 340;
+    const footerY = height - 320;
     const pct = metrics.percentile ?? 50;
 
     ctx.save();
@@ -184,7 +185,7 @@ export async function downloadMoggingCard(metrics: FacialMetrics, userPhoto?: st
 
     // Achievement Text with Fitting
     const achievementText = `TOP ${100 - pct}% GLOBAL CANDIDATE`;
-    drawTextFit(ctx, achievementText, width / 2, footerY + 86, width - 100, "900 48px Inter, sans-serif", "#000000", "center", "6px");
+    drawTextFit(ctx, achievementText, width / 2, footerY + 70, width - 100, "900 48px Inter, sans-serif", "#000000", "center", "6px", "middle");
 
     // Footer Branding
     ctx.font = "900 24px Inter, sans-serif";
@@ -222,10 +223,11 @@ function drawAmbientGlow(ctx: CanvasRenderingContext2D, x: number, y: number, r:
     ctx.fillRect(x - r, y - r, r * 2, r * 2);
 }
 
-function drawTextFit(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, font: string, color: string, align: CanvasTextAlign = "left", spacing: string = "0px") {
+function drawTextFit(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, font: string, color: string, align: CanvasTextAlign = "left", spacing: string = "0px", baseline: CanvasTextBaseline = "alphabetic") {
     ctx.font = font;
     ctx.textAlign = align;
     ctx.letterSpacing = spacing;
+    ctx.textBaseline = baseline;
 
     let metrics = ctx.measureText(text);
     let fontSizeMatch = font.match(/(\d+)px/);
