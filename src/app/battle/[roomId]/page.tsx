@@ -7,12 +7,23 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Timer, Zap, Trophy, AlertTriangle, ArrowLeft, Share2, Flame, Skull } from "lucide-react";
 import { calculateScores, getRankLabel, getScoreColor, getRankColor, FacialMetrics, NLM } from "@/lib/scoring";
 import { drawFaceMesh } from "@/lib/facemesh-utils";
+import { playCountdownBeep, playGoSound, playVictorySound, playDefeatSound, playTieSound, vibrate } from "@/lib/sounds";
+import { downloadBattleCard } from "@/lib/render-battle-card";
 
 const ICE: RTCConfiguration = {
     iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
-        { urls: "stun:stun2.l.google.com:19302" }
+        // Free TURN relay — works across different networks/mobile data
+        {
+            urls: [
+                "turn:openrelay.metered.ca:80",
+                "turn:openrelay.metered.ca:443",
+                "turn:openrelay.metered.ca:443?transport=tcp",
+            ],
+            username: "openrelayproject",
+            credential: "openrelayproject",
+        },
     ],
     iceTransportPolicy: 'all',
     iceCandidatePoolSize: 10
@@ -239,6 +250,7 @@ export default function BattlePage() {
     const [noFaceDetected, setNoFaceDetected] = useState(false);
     const [localFaceReady, setLocalFaceReady] = useState(false);
     const [aiLoading, setAiLoading] = useState(true);
+    const [localSnapshot, setLocalSnapshot] = useState<string | null>(null);
 
     useEffect(() => {
         setMounted(true);
@@ -323,7 +335,7 @@ export default function BattlePage() {
                     const state = pc.connectionState;
                     console.log("[WebRTC] Connection state:", state);
                     setRtcState(state);
-                    if (state === "connected" || state === "completed") {
+                    if (state === "connected" || (state as string) === "completed") {
                         setRemoteOk(true);
                         socket.emit("peer-connected", roomId);
                     }
@@ -450,14 +462,18 @@ export default function BattlePage() {
         }
     }, [localFaceReady, playerCount, sendReady]);
 
-    // ── Countdown ────────────────────────────────────────────────────────────
+    // ── Countdown — with sound effects ──────────────────────────────────────
     useEffect(() => {
         if (status !== "countdown") return;
         if (countdown > 0) {
+            playCountdownBeep(countdown);
+            vibrate(60);
             const t = setTimeout(() => setCountdown(c => c - 1), 1000);
             return () => clearTimeout(t);
         }
         // countdown === 0 means "GO!"
+        playGoSound();
+        vibrate([80, 40, 80]);
         const t = setTimeout(() => {
             setShowParticles(true);
             setStatus("battling");
@@ -490,14 +506,24 @@ export default function BattlePage() {
         return () => clearInterval(id);
     }, [status]);
 
-    // ── Winner resolution ─────────────────────────────────────────────────────
+    // ── Winner resolution — with sound effects ───────────────────────────────
     useEffect(() => {
         if (userScores && oppScores && status === "finished" && winner === null) {
             const w = userScores.overall > oppScores.overall ? "user" : userScores.overall < oppScores.overall ? "opponent" : "tie";
             setWinner(w);
-            // Update mogging bar to actual score difference
-            const myS = userScores.overall;
-            const oppS = oppScores.overall;
+            // Sound + haptic
+            if (w === "user") { playVictorySound(); vibrate([100, 50, 100, 50, 200]); }
+            else if (w === "opponent") { playDefeatSound(); vibrate([300]); }
+            else { playTieSound(); vibrate([100, 50, 100]); }
+            // Capture local snapshot for share card
+            if (localVideoRef.current) {
+                const v = localVideoRef.current;
+                const sc = document.createElement("canvas");
+                sc.width = v.videoWidth; sc.height = v.videoHeight;
+                const sctx = sc.getContext("2d");
+                if (sctx) { sctx.scale(-1, 1); sctx.translate(-sc.width, 0); sctx.drawImage(v, 0, 0); setLocalSnapshot(sc.toDataURL("image/jpeg", 0.85)); }
+            }
+            const myS = userScores.overall; const oppS = oppScores.overall;
             const total = myS + oppS;
             setMoggingLevel(total > 0 ? Math.round((myS / total) * 100) : 50);
         }
@@ -943,6 +969,13 @@ export default function BattlePage() {
                                             <span className="relative z-10">🔁 Rematch</span>
                                             <div className="absolute inset-0 bg-cyan-400 -translate-x-full group-hover:translate-x-0 transition-transform duration-300" />
                                         </button>
+                                        {userScores && oppScores && winner && (
+                                            <button
+                                                className="px-10 py-4 border border-emerald-500/30 bg-emerald-500/10 font-black uppercase tracking-widest rounded-xl hover:bg-emerald-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all text-emerald-400"
+                                                onClick={() => downloadBattleCard(winner, userScores, oppScores, localSnapshot ?? undefined)}>
+                                                ⬇️ Flex Card
+                                            </button>
+                                        )}
                                         <button
                                             className="px-10 py-4 border border-white/10 bg-white/5 font-black uppercase tracking-widest rounded-xl hover:bg-white/10 flex items-center justify-center gap-2 active:scale-95 transition-all"
                                             onClick={() => router.push("/")}>

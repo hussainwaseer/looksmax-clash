@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useSocket } from "@/components/SocketProvider";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronRight, AlertCircle, ArrowLeft, Swords } from "lucide-react";
+import { ChevronRight, AlertCircle, ArrowLeft, Swords, Shuffle, X } from "lucide-react";
 
 export default function JoinRoom() {
     const socket = useSocket();
@@ -13,8 +13,53 @@ export default function JoinRoom() {
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [mounted, setMounted] = useState(false);
+    const [matchmaking, setMatchmaking] = useState(false);
+    const [queuePosition, setQueuePosition] = useState<number | null>(null);
 
     useEffect(() => { setMounted(true); }, []);
+
+    useEffect(() => {
+        if (!socket || !mounted) return;
+
+        socket.on("joined-room-info", (data: { roomId: string }) => {
+            router.push(`/battle/${data.roomId}`);
+        });
+
+        socket.on("room-error", (msg: string) => {
+            setError(msg);
+            setLoading(false);
+            setMatchmaking(false);
+        });
+
+        socket.on("error", (msg: string) => {
+            setError(msg);
+            setLoading(false);
+            setMatchmaking(false);
+        });
+
+        socket.on("match-queued", (data: { position: number }) => {
+            setQueuePosition(data.position);
+        });
+
+        socket.on("match-found", (data: { roomId: string }) => {
+            router.push(`/battle/${data.roomId}`);
+        });
+
+        socket.on("match-cancelled", () => {
+            setMatchmaking(false);
+            setQueuePosition(null);
+            setLoading(false);
+        });
+
+        return () => {
+            socket.off("joined-room-info");
+            socket.off("room-error");
+            socket.off("error");
+            socket.off("match-queued");
+            socket.off("match-found");
+            socket.off("match-cancelled");
+        };
+    }, [socket, router, mounted]);
 
     const handleJoin = (e: React.FormEvent) => {
         e.preventDefault();
@@ -26,24 +71,26 @@ export default function JoinRoom() {
 
         socket.emit("join-room", trimmed);
 
-        socket.once("joined-room-info", (data: { roomId: string }) => {
-            router.push(`/battle/${data.roomId}`);
-        });
-
-        socket.once("room-error", (msg: string) => {
-            setError(msg);
-            setLoading(false);
-        });
-
-        socket.once("error", (msg: string) => {
-            setError(msg);
-            setLoading(false);
-        });
+        socket.emit("join-room", trimmed);
 
         setTimeout(() => {
-            setError(prev => prev ?? "Connection timed out. Check the room code and try again.");
-            setLoading(false);
+            if (loading) {
+                setError(prev => prev ?? "Connection timed out. Check the room code and try again.");
+                setLoading(false);
+                setMatchmaking(false);
+            }
         }, 7000);
+    };
+
+    const handleRandomMatch = () => {
+        setLoading(true);
+        setError(null);
+        setMatchmaking(true);
+        socket.emit("find-match");
+    };
+
+    const cancelMatchmaking = () => {
+        socket.emit("cancel-match");
     };
 
     if (!mounted) return <div className="min-h-screen bg-[#050505]" />;
@@ -134,12 +181,42 @@ export default function JoinRoom() {
                                 )}
                             </AnimatePresence>
                         </motion.button>
+                        <motion.button
+                            type="button"
+                            onClick={handleRandomMatch}
+                            disabled={loading}
+                            whileHover={{ scale: loading ? 1 : 1.01 }}
+                            whileTap={{ scale: loading ? 1 : 0.97 }}
+                            className={`w-full py-5 bg-transparent border-2 border-purple-500/30 text-purple-400 font-black uppercase tracking-widest rounded-xl flex items-center justify-center gap-2.5 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-purple-500/10 hover:border-purple-500/50 transition-all text-sm mt-4 ${(matchmaking || loading) && !matchmaking ? "hidden" : ""}`}>
+
+                            {matchmaking ? (
+                                <span className="flex items-center gap-2">
+                                    <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                                        className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full" />
+                                    Finding Opponent... {queuePosition && `(Queue: ${queuePosition})`}
+                                </span>
+                            ) : (
+                                <span className="flex items-center gap-2">
+                                    <Shuffle size={18} /> Random Matchmaking
+                                </span>
+                            )}
+                        </motion.button>
+                        {matchmaking && (
+                            <div className="flex justify-center mt-2">
+                                <button
+                                    type="button"
+                                    onClick={cancelMatchmaking}
+                                    className="text-[10px] text-zinc-500 hover:text-red-400 uppercase tracking-widest flex items-center gap-1 transition-colors">
+                                    <X size={12} /> Cancel
+                                </button>
+                            </div>
+                        )}
                     </form>
 
                     <div className="text-center text-[10px] text-zinc-700 mt-8 uppercase tracking-widest">
                         Need a code?{" "}
-                        <button onClick={() => router.push("/create")} type="button"
-                            className="text-cyan-400 hover:text-cyan-300 cursor-pointer transition-colors font-black">
+                        <button onClick={() => router.push("/create")} type="button" disabled={loading}
+                            className="text-cyan-400 hover:text-cyan-300 cursor-pointer disabled:opacity-50 transition-colors font-black">
                             Create your own room
                         </button>
                     </div>

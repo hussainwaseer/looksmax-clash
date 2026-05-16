@@ -261,7 +261,6 @@ export default function FaceScanPage() {
     const [yaw, setYaw] = useState(0);
     const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
 
-
     useEffect(() => {
         setMounted(true);
         if (typeof window !== "undefined" && !window.isSecureContext && location.hostname !== "localhost")
@@ -432,6 +431,15 @@ export default function FaceScanPage() {
             // Recalculate potential with new overall
             const potBonus = parseFloat(Math.min(2.5, (10 - finalMetrics.overall) * 0.4 + (base.weaknesses.length * 0.3)).toFixed(1));
             finalMetrics.potentialScore = parseFloat(Math.max(finalMetrics.overall + 0.3, Math.min(9.9, finalMetrics.overall + potBonus)).toFixed(1));
+
+            // Save to history (now handled in ScanResults on mount, but we can also just let ScanResults check history array. Wait, if we save it here, ScanResults reads it. Let's keep it saving here so it's consistent)
+            try {
+                const histRaw = localStorage.getItem("looksmax_history");
+                let hist = histRaw ? JSON.parse(histRaw) : [];
+                hist.push({ date: new Date().toISOString(), overall: finalMetrics.overall, potential: finalMetrics.potentialScore });
+                if (hist.length > 10) hist = hist.slice(hist.length - 10);
+                localStorage.setItem("looksmax_history", JSON.stringify(hist));
+            } catch (_) { }
 
             setScanResults(finalMetrics);
             setPhase("finished");
@@ -717,6 +725,37 @@ function ScanResults({ metrics, onReset, capturedPhoto }: { metrics: FacialMetri
     const isLowScore = metrics.overall < 5.5;
     const [isChatOpen, setIsChatOpen] = useState(false);
 
+    // AI Plan & History State
+    const [aiPlanString, setAiPlanString] = useState<string | null>(null);
+    const [generatingPlan, setGeneratingPlan] = useState(false);
+    const [scanHistory, setScanHistory] = useState<{ date: string; overall: number; potential: number }[]>([]);
+
+    useEffect(() => {
+        try {
+            const h = localStorage.getItem("looksmax_history");
+            if (h) setScanHistory(JSON.parse(h));
+        } catch (_) { }
+    }, []);
+
+    const generateAIPlan = async () => {
+        if (!metrics || generatingPlan || aiPlanString) return;
+        setGeneratingPlan(true);
+        try {
+            const prompt = `Give me a concise 3-step actionable looksmaxxing plan to improve my ${metrics.overall}/10 rating to my ${metrics.potentialScore}/10 potential. My main structural weaknesses are: ${metrics.weaknesses.join(", ")}. Format strictly as 3 bullet points starting with "- ". Keep each point short and brutally honest.`;
+            const res = await fetch("/api/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ metrics, messages: [{ role: "user", content: prompt }] })
+            });
+            const data = await res.json();
+            if (data.content) setAiPlanString(data.content);
+        } catch (err) {
+            console.error("AI Plan Gen Error", err);
+        } finally {
+            setGeneratingPlan(false);
+        }
+    };
+
     return (
         <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-4xl flex flex-col gap-8 pb-12">
 
@@ -896,13 +935,67 @@ function ScanResults({ metrics, onReset, capturedPhoto }: { metrics: FacialMetri
                             <Activity size={12} />
                             {isLowScore ? "Honest Looksmax Roadmap" : `Path to ${metrics.potentialScore} Tier`}
                         </h4>
-                        <ul className="text-[11px] text-zinc-300 space-y-1.5">
-                            <li className="flex gap-2">• <span className="text-zinc-500">Body Fat:</span> Sub-15% BF reveals jaw & cheekbone definition (+0.5-1.0).</li>
-                            <li className="flex gap-2">• <span className="text-zinc-500">Mewing:</span> Consistent tongue posture develops maxilla over time.</li>
-                            <li className="flex gap-2">• <span className="text-zinc-500">Grooming:</span> Brow shaping can boost eye area and canthal framing.</li>
-                            {isLowScore && <li className="flex gap-2">• <span className="text-zinc-500">Realistic ceiling:</span> Non-surgical max ≈ {metrics.potentialScore}. Some issues are structural.</li>}
-                        </ul>
+
+                        {!aiPlanString && !generatingPlan && (
+                            <div className="flex flex-col items-start gap-4">
+                                <ul className="text-[11px] text-zinc-400 space-y-1.5 line-clamp-2 blur-[1px]">
+                                    <li className="flex gap-2">• <span className="text-zinc-500">Body Fat:</span> Sub-15% BF reveals jaw & cheekbone definition (+0.5).</li>
+                                    <li className="flex gap-2">• <span className="text-zinc-500">Mewing:</span> Consistent tongue posture develops maxilla over time.</li>
+                                </ul>
+                                <button
+                                    onClick={generateAIPlan}
+                                    className="w-full py-3 bg-gradient-to-r from-purple-600/20 to-cyan-600/20 border border-purple-500/30 text-purple-300 font-black uppercase tracking-widest rounded-xl hover:bg-purple-500/20 transition-all text-[10px] flex items-center justify-center gap-2">
+                                    <Sparkles size={14} /> Generate Personalized AI Plan
+                                </button>
+                            </div>
+                        )}
+
+                        {generatingPlan && (
+                            <div className="flex items-center gap-3 py-4">
+                                <Loader2 size={16} className="text-purple-400 animate-spin" />
+                                <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">Querying Neural Engine...</span>
+                            </div>
+                        )}
+
+                        {aiPlanString && (
+                            <ul className="text-[11px] text-zinc-300 space-y-2">
+                                {aiPlanString.split("\n").filter((l: string) => l.trim().length > 0).map((line: string, idx: number) => (
+                                    <li key={idx} className="flex gap-2 leading-relaxed">
+                                        <span className="text-purple-400 font-bold shrink-0">·</span>
+                                        {line.replace(/^-\s*/, "").replace(/^\d+\.\s*/, "").replace(/\*\*/g, "")}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
                     </div>
+
+                    {/* Scan History Chart */}
+                    {scanHistory.length > 0 && (
+                        <div className="bg-white/5 border border-white/10 p-6 rounded-[2rem]">
+                            <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-4 flex items-center gap-2">
+                                <Activity size={12} /> Scan History (Last {scanHistory.length})
+                            </h4>
+                            <div className="flex gap-2 items-end h-[60px] overflow-hidden">
+                                {scanHistory.map((sh: { overall: number, potential: number, date: string }, idx: number) => {
+                                    const isCurrent = idx === scanHistory.length - 1;
+                                    const hPercent = (sh.overall / 10) * 100;
+                                    return (
+                                        <div key={idx} className="flex-1 flex flex-col items-center gap-1.5 group relative">
+                                            <div className="w-full bg-white/5 rounded-t-sm relative flex items-end" style={{ height: "40px" }}>
+                                                <div
+                                                    className={`w-full rounded-t-sm transition-all ${isCurrent ? "bg-cyan-400" : "bg-white/20"} opacity-80 group-hover:opacity-100`}
+                                                    style={{ height: `${hPercent}%` }}
+                                                />
+                                            </div>
+                                            <div className="text-[8px] text-zinc-500 tabular-nums">
+                                                {sh.overall.toFixed(1)}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Actions */}
                     <div className="flex flex-col gap-3">

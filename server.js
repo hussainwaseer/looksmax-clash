@@ -10,8 +10,10 @@ const port = parseInt(process.env.PORT || '3000', 10);
 const app = next({ dev, hostname: 'localhost', port });
 const handle = app.getRequestHandler();
 
-// roomId -> { players: [{id, ready, peerConnected}], status, offerId }
+// roomId -> { players: [{id, ready, peerConnected}], spectators: [id], status, offerId, createdAt }
 const rooms = new Map();
+// Matchmaking queue: array of socket IDs waiting for a random opponent
+const matchQueue = [];
 
 app.prepare().then(() => {
     const httpServer = createServer(async (req, res) => {
@@ -38,19 +40,44 @@ app.prepare().then(() => {
         transports: ['websocket', 'polling'],
     });
 
-    // Start countdown only when ALL players are face-ready AND WebRTC peer-connected
+    // Start countdown when ALL players are face-ready (WebRTC is not a hard gate)
     function tryStartCountdown(roomId, room) {
         if (room.countdownStarted) return;
         if (room.players.length < 2) return;
         const allReady = room.players.every((p) => p.ready);
-        const allConnected = room.players.every((p) => p.peerConnected);
-        if (allReady && allConnected) {
+        if (allReady) {
             room.countdownStarted = true;
             room.status = 'countdown';
-            console.log(`[Server] All ready+connected in ${roomId}, starting countdown`);
+            console.log(`[Server] All ready in ${roomId}, starting countdown`);
             io.to(roomId).emit('start-countdown');
         }
     }
+
+    // Force-start countdown after 6s timeout if players are ready but WebRTC is stalling
+    function scheduleCountdownTimeout(roomId) {
+        setTimeout(() => {
+            const room = rooms.get(roomId);
+            if (!room || room.countdownStarted) return;
+            if (room.players.length >= 2 && room.players.every(p => p.ready)) {
+                console.log(`[Server] Countdown timeout triggered for ${roomId}`);
+                room.countdownStarted = true;
+                room.status = 'countdown';
+                io.to(roomId).emit('start-countdown');
+            }
+        }, 6000);
+    }
+
+    // ── Room timeout cleanup — runs every 10 minutes ──────────────────────────
+    setInterval(() => {
+        const now = Date.now();
+        for (const [roomId, room] of rooms.entries()) {
+            // Rooms older than 10 minutes with no active battle are stale
+            if (now - room.createdAt > 10 * 60 * 1000 && room.status !== 'battling') {
+                rooms.delete(roomId);
+                console.log(`[Server] Cleaned up stale room: ${roomId}`);
+            }
+        }
+    }, 10 * 60 * 1000);
 
     io.on('connection', (socket) => {
         console.log('[Server] User connected:', socket.id);
@@ -60,14 +87,55 @@ app.prepare().then(() => {
             const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
             rooms.set(roomId, {
                 players: [{ id: socket.id, ready: false, peerConnected: false }],
+                spectators: [],
                 status: 'waiting',
+                createdAt: Date.now(),
             });
             socket.join(roomId);
             socket.emit('room-created', roomId);
             console.log(`[Server] Room created: ${roomId} by ${socket.id}`);
         });
 
-        // ── Join Room ─────────────────────────────────────────────────────────
+        // ── Random Matchmaking ────────────────────────────────────────────────
+        socket.on('find-match', () => {
+            // Remove if already queued
+            const qi = matchQueue.indexOf(socket.id);
+            if (qi !== -1) matchQueue.splice(qi, 1);
+
+            if (matchQueue.length > 0) {
+                // Pair with the first waiting player
+                const peerId = matchQueue.shift();
+                const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+                rooms.set(roomId, {
+                    players: [
+                        { id: peerId, ready: false, peerConnected: false },
+                        { id: socket.id, ready: false, peerConnected: false },
+                    ],
+                    spectators: [],
+                    status: 'waiting',
+                    createdAt: Date.now(),
+                });
+                // Join both sockets to the room
+                const peerSocket = io.sockets.sockets.get(peerId);
+                if (peerSocket) peerSocket.join(roomId);
+                socket.join(roomId);
+
+                io.to(roomId).emit('match-found', { roomId, playerCount: 2 });
+                io.to(roomId).emit('room-ready');
+                io.to(peerId).emit('should-create-offer', { roomId });
+                console.log(`[Matchmaking] Paired ${peerId} and ${socket.id} in ${roomId}`);
+            } else {
+                matchQueue.push(socket.id);
+                socket.emit('match-queued', { position: matchQueue.length });
+                console.log(`[Matchmaking] ${socket.id} queued (queue size: ${matchQueue.length})`);
+            }
+        });
+
+        socket.on('cancel-match', () => {
+            const qi = matchQueue.indexOf(socket.id);
+            if (qi !== -1) { matchQueue.splice(qi, 1); socket.emit('match-cancelled'); }
+        });
+
         socket.on('join-room', (roomId) => {
             roomId = String(roomId).toUpperCase().trim();
 
@@ -82,7 +150,17 @@ app.prepare().then(() => {
             const playerIndex = room.players.findIndex(p => p.id === socket.id);
             if (playerIndex === -1) {
                 if (room.players.length >= 2) {
-                    socket.emit('room-error', 'Room is full');
+                    // 3rd+ player joins as spectator
+                    if (!room.spectators.includes(socket.id)) {
+                        room.spectators.push(socket.id);
+                    }
+                    socket.join(roomId);
+                    socket.emit('joined-as-spectator', {
+                        roomId,
+                        playerCount: room.players.length,
+                        status: room.status,
+                    });
+                    console.log(`[Server] ${socket.id} joined ${roomId} as spectator`);
                     return;
                 }
                 room.players.push({ id: socket.id, ready: false, peerConnected: false });
@@ -128,6 +206,7 @@ app.prepare().then(() => {
             console.log(`[Server] player-ready in ${roomId} from ${socket.id}`);
 
             tryStartCountdown(roomId, room);
+            scheduleCountdownTimeout(roomId);
         });
 
         // ── Peer Connected (WebRTC handshake complete) ─────────────────────────
@@ -159,6 +238,10 @@ app.prepare().then(() => {
         socket.on('disconnect', () => {
             console.log('[Server] User disconnected:', socket.id);
             for (const [roomId, room] of rooms.entries()) {
+                // Remove from spectators
+                const sIdx = room.spectators?.indexOf(socket.id) ?? -1;
+                if (sIdx !== -1) { room.spectators.splice(sIdx, 1); break; }
+
                 const idx = room.players.findIndex((p) => p.id === socket.id);
                 if (idx !== -1) {
                     room.players.splice(idx, 1);
