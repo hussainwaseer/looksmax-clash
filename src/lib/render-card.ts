@@ -1,221 +1,323 @@
 import { FacialMetrics, getRankLabel } from "./scoring";
 
 /**
- * Ultra-Luxury 9:16 Social Sharing Card
- * Fixes: text overflow, circular face masking, center-cropping, and premium glows.
+ * Ultra-Premium "Flex Card" — 9:16 Social Sharing Report Card
+ * Fully recalculated layout: zero overlap, holographic dark aesthetic.
  */
 export async function downloadMoggingCard(metrics: FacialMetrics, userPhoto?: string) {
-    const width = 1080;
-    const height = 1920;
+    const W = 1080;
+    const H = 1920;
     const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = W;
+    canvas.height = H;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // ─── 0. Load User Photo (if provided) ───
+    // ─── 0. Load Photo ───────────────────────────────────────────────────────
     let photoImg: HTMLImageElement | null = null;
     if (userPhoto) {
         photoImg = new Image();
         photoImg.src = userPhoto;
-        await new Promise((resolve) => {
-            photoImg!.onload = resolve;
-            photoImg!.onerror = resolve;
+        await new Promise((res) => {
+            photoImg!.onload = res;
+            photoImg!.onerror = res;
         });
     }
 
-    // ─── 1. Background (Premium Deep Space) ───
-    ctx.fillStyle = "#010101";
-    ctx.fillRect(0, 0, width, height);
+    const isElite = metrics.overall >= 7.5;
+    const isGod = metrics.overall >= 9.0;
+    const accentA = isGod ? "#FFD700" : isElite ? "#10b981" : "#22d3ee";
+    const accentB = isGod ? "#FF8C00" : isElite ? "#34d399" : "#a855f7";
 
-    // Deep ambient glows for depth
-    drawAmbientGlow(ctx, width / 2, height / 3, 1000, "rgba(34, 211, 238, 0.04)");
-    drawAmbientGlow(ctx, width / 2, height, 1200, "rgba(168, 85, 247, 0.03)");
+    // ─── 1. Background — Deep Space ──────────────────────────────────────────
+    ctx.fillStyle = "#030308";
+    ctx.fillRect(0, 0, W, H);
 
-    // ─── 2. Top Section: User Photo (Circular Mask) ───
-    const topMargin = 100;
+    // Radial mesh glows
+    _glow(ctx, W * 0.2, H * 0.12, 700, "rgba(139,92,246,0.07)");
+    _glow(ctx, W * 0.85, H * 0.35, 600, "rgba(34,211,238,0.05)");
+    _glow(ctx, W * 0.5, H * 0.75, 800, isElite ? "rgba(16,185,129,0.04)" : "rgba(168,85,247,0.04)");
 
-    // Header Label
-    ctx.font = "900 32px Inter, sans-serif";
-    ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
-    ctx.textAlign = "center";
-    ctx.letterSpacing = "8px";
-    ctx.fillText("FACIAL ANALYSIS COMPLETE", width / 2, topMargin + 20);
-
-    // Photo Centerpiece
-    const photoRadius = 240;
-    const photoX = width / 2;
-    const photoY = topMargin + 280;
-
-    // Outer Glow Border
-    const borderGrad = ctx.createLinearGradient(photoX - photoRadius, photoY - photoRadius, photoX + photoRadius, photoY + photoRadius);
-    borderGrad.addColorStop(0, "#22d3ee");
-    borderGrad.addColorStop(1, "#a855f7");
-
-    ctx.shadowBlur = 40;
-    ctx.shadowColor = "rgba(34, 211, 238, 0.4)";
-    ctx.strokeStyle = borderGrad;
-    ctx.lineWidth = 14;
-    ctx.beginPath(); ctx.arc(photoX, photoY, photoRadius + 12, 0, Math.PI * 2); ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    // Circular Photo Mask
+    // Subtle dot grid
     ctx.save();
-    ctx.beginPath();
-    ctx.arc(photoX, photoY, photoRadius, 0, Math.PI * 2);
-    ctx.clip();
-    if (photoImg) {
-        // Center-crop "Cover" logic
-        const aspect = photoImg.width / photoImg.height;
-        let drawW, drawH, drawX, drawY;
-        if (aspect > 1) { // Landscape source
-            drawH = photoRadius * 2;
-            drawW = drawH * aspect;
-            drawY = photoY - photoRadius;
-            drawX = photoX - drawW / 2;
-        } else { // Portrait source
-            drawW = photoRadius * 2;
-            drawH = drawW / aspect;
-            drawX = photoX - photoRadius;
-            drawY = photoY - drawH / 2;
+    for (let gx = 0; gx < W; gx += 44) {
+        for (let gy = 0; gy < H; gy += 44) {
+            ctx.fillStyle = "rgba(255,255,255,0.018)";
+            ctx.beginPath(); ctx.arc(gx, gy, 1, 0, Math.PI * 2); ctx.fill();
         }
-        ctx.drawImage(photoImg, drawX, drawY, drawW, drawH);
-    } else {
-        ctx.fillStyle = "#111";
-        ctx.fillRect(photoX - photoRadius, photoY - photoRadius, photoRadius * 2, photoRadius * 2);
     }
     ctx.restore();
 
-    // ─── 3. Overall Score Card (Frosted Glass) ───
-    const scoreCardY = photoY + photoRadius + 60;
-    const scoreCardH = 260;
-    const cardMargin = 80;
-    const cardW = width - cardMargin * 2;
+    // ─── 2. Top Header Bar ───────────────────────────────────────────────────
+    const headerH = 90;
+    const hGrad = ctx.createLinearGradient(0, 0, W, 0);
+    hGrad.addColorStop(0, "rgba(139,92,246,0.35)");
+    hGrad.addColorStop(0.5, "rgba(34,211,238,0.20)");
+    hGrad.addColorStop(1, "rgba(139,92,246,0.35)");
+    ctx.fillStyle = hGrad;
+    ctx.fillRect(0, 0, W, headerH);
 
-    drawGlassCard(ctx, cardMargin, scoreCardY, cardW, scoreCardH, 48);
+    // Header border bottom
+    const hLine = ctx.createLinearGradient(0, 0, W, 0);
+    hLine.addColorStop(0, "transparent");
+    hLine.addColorStop(0.5, accentA);
+    hLine.addColorStop(1, "transparent");
+    ctx.strokeStyle = hLine;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, headerH); ctx.lineTo(W, headerH); ctx.stroke();
 
-    // Donut Score
-    const donutX = cardMargin + 160;
-    const donutY = scoreCardY + scoreCardH / 2;
-    const donutR = 90;
+    // Header text
+    ctx.font = "900 22px Inter, Arial, sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.textAlign = "center";
+    ctx.letterSpacing = "10px";
+    ctx.fillText("LOOKSMAX CLASH · GENETIC REPORT", W / 2, headerH / 2 + 8);
+    ctx.letterSpacing = "0px";
 
-    // Donut Progress
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
-    ctx.lineWidth = 20;
-    ctx.beginPath(); ctx.arc(donutX, donutY, donutR, 0, Math.PI * 2); ctx.stroke();
+    // ─── 3. Photo Circle ─────────────────────────────────────────────────────
+    const photoR = 190;         // radius
+    const photoX = W / 2;
+    const photoY = headerH + 30 + photoR + 20; // 330
 
-    const isElite = metrics.overall >= 7.5;
-    ctx.strokeStyle = isElite ? "#10b981" : "#22d3ee";
-    ctx.beginPath();
-    ctx.arc(donutX, donutY, donutR, -Math.PI / 2, (metrics.overall / 10) * Math.PI * 2 - Math.PI / 2);
-    ctx.stroke();
+    // Outer glow ring (double)
+    for (const [r, alpha] of [[photoR + 28, 0.25], [photoR + 16, 0.55]] as [number, number][]) {
+        const rg = ctx.createLinearGradient(photoX - r, photoY - r, photoX + r, photoY + r);
+        rg.addColorStop(0, accentA);
+        rg.addColorStop(1, accentB);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = rg;
+        ctx.lineWidth = r === photoR + 28 ? 4 : 6;
+        ctx.beginPath(); ctx.arc(photoX, photoY, r, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+    }
 
-    // Score Text
+    // Photo clip
+    ctx.save();
+    ctx.beginPath(); ctx.arc(photoX, photoY, photoR, 0, Math.PI * 2); ctx.clip();
+    if (photoImg && photoImg.width > 0) {
+        const aspect = photoImg.width / photoImg.height;
+        let dw: number, dh: number, dx: number, dy: number;
+        if (aspect > 1) { dh = photoR * 2; dw = dh * aspect; dy = photoY - photoR; dx = photoX - dw / 2; }
+        else { dw = photoR * 2; dh = dw / aspect; dx = photoX - photoR; dy = photoY - dh / 2; }
+        ctx.drawImage(photoImg, dx, dy, dw, dh);
+    } else {
+        // Placeholder gradient
+        const ph = ctx.createRadialGradient(photoX, photoY - 40, 0, photoX, photoY, photoR);
+        ph.addColorStop(0, "#1e1e2e");
+        ph.addColorStop(1, "#0a0a12");
+        ctx.fillStyle = ph;
+        ctx.fillRect(photoX - photoR, photoY - photoR, photoR * 2, photoR * 2);
+
+        // Silhouette icon
+        ctx.fillStyle = "rgba(255,255,255,0.06)";
+        ctx.beginPath(); ctx.arc(photoX, photoY - 40, 55, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(photoX, photoY + 70, 85, 60, 0, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
+
+    // ─── 4. Score Hero Block ─────────────────────────────────────────────────
+    const scoreSectionY = photoY + photoR + 36; // ~596
+    const scoreSectionH = 210;
+
+    _glassCard(ctx, 60, scoreSectionY, W - 120, scoreSectionH, 44);
+
+    // Score number
+    const scoreGrad = ctx.createLinearGradient(W / 2 - 120, scoreSectionY, W / 2 + 120, scoreSectionY + scoreSectionH);
+    scoreGrad.addColorStop(0, accentA);
+    scoreGrad.addColorStop(1, accentB);
+    ctx.font = "900 130px Inter, Arial, sans-serif";
+    ctx.fillStyle = scoreGrad;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "900 82px Inter, sans-serif";
-    ctx.fillText(metrics.overall.toFixed(1), donutX, donutY + 10);
+    ctx.fillText(metrics.overall.toFixed(1), W / 2, scoreSectionY + scoreSectionH / 2 - 10);
 
-    // Rank & Potential Achievement
-    const rankText = getRankLabel(metrics.overall).toUpperCase();
-    drawTextFit(ctx, rankText, donutX + 160, donutY - 20, cardW - 360, "italic 900 84px Inter, sans-serif", isElite ? "#10b981" : "#ffffff", "left", "0px", "middle");
+    // Label left
+    ctx.font = "900 18px Inter, Arial, sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,0.25)";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.letterSpacing = "5px";
+    ctx.fillText("SCORE", 88, scoreSectionY + scoreSectionH / 2 - 45);
+    ctx.fillText("/ 10", 88, scoreSectionY + scoreSectionH / 2 + 35);
+    ctx.letterSpacing = "0px";
 
-    const potText = `POTENTIAL SCORE: ${metrics.potentialScore}`;
-    drawTextFit(ctx, potText, donutX + 160, donutY + 45, cardW - 360, "900 32px Inter, sans-serif", "rgba(255, 255, 255, 0.4)", "left", "2px", "middle");
+    // Rank label right
+    const rankStr = getRankLabel(metrics.overall).toUpperCase();
+    ctx.save();
+    ctx.font = "italic 900 36px Inter, Arial, sans-serif";
+    ctx.fillStyle = accentA;
+    ctx.textAlign = "right";
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = accentA;
+    _textFit(ctx, rankStr, W - 88, scoreSectionY + scoreSectionH / 2 - 30, 300, "italic 900 38px Inter, Arial, sans-serif", accentA, "right", "0px", "middle");
+    ctx.restore();
 
-    // ─── 4. Metrics Grid (2x3) ───
-    const gridY = scoreCardY + scoreCardH + 30;
-    const itemW = (cardW - 30) / 2;
-    const itemH = 180;
-    const items = [
-        { label: "JAWLINE", val: metrics.jawline, status: metrics.jawline >= 8.0 ? "SHARP" : metrics.jawline >= 6.5 ? "STRONG" : "NORMAL" },
+    // Potential line
+    ctx.font = "bold 22px Inter, Arial, sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,0.22)";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.letterSpacing = "1px";
+    ctx.fillText(`POTENTIAL  ${metrics.potentialScore}`, W - 88, scoreSectionY + scoreSectionH / 2 + 30);
+    ctx.letterSpacing = "0px";
+
+    // ─── 5. Metrics Grid (2 × 3) ─────────────────────────────────────────────
+    const gridTop = scoreSectionY + scoreSectionH + 28;  // ~834
+    const tileW = (W - 120 - 20) / 2;                  // ~460
+    const tileH = 155;
+    const tileGap = 20;
+    const mLeft = 60;
+
+    const items: { label: string; val: number; status: string }[] = [
+        { label: "JAWLINE", val: metrics.jawline, status: metrics.jawline >= 8.0 ? "SHARP" : metrics.jawline >= 6.5 ? "STRONG" : "AVERAGE" },
         { label: "SYMMETRY", val: metrics.symmetry, status: metrics.symmetry >= 8.0 ? "ELITE" : metrics.symmetry >= 6.5 ? "STEADY" : "AVERAGE" },
-        { label: "EYE AREA", val: metrics.eyeArea, status: metrics.eyeArea >= 8.0 ? "HUNTER" : metrics.eyeArea >= 6.5 ? "FAVORABLE" : "ROUND" },
-        { label: "FACIAL THIRDS", val: metrics.harmonics, status: metrics.harmonics >= 8.0 ? "GOLDEN" : "BALANCED" },
+        { label: "EYE AREA", val: metrics.eyeArea, status: metrics.eyeArea >= 8.0 ? "HUNTER" : metrics.eyeArea >= 6.5 ? "FAVORED" : "ROUND" },
+        { label: "HARMONICS", val: metrics.harmonics, status: metrics.harmonics >= 8.0 ? "GOLDEN" : "BALANCED" },
         { label: "CANTHAL TILT", val: metrics.canthalTilt ?? 6.0, status: (metrics.canthalTilt ?? 6.0) >= 7.0 ? "POSITIVE" : "NEUTRAL" },
-        { label: "MIDFACE RATIO", val: metrics.midfaceRatio ?? 6.0, status: (metrics.midfaceRatio ?? 6.0) >= 7.5 ? "COMPACT" : "OPTIMAL" },
+        { label: "MIDFACE", val: metrics.midfaceRatio ?? 6.0, status: (metrics.midfaceRatio ?? 6.0) >= 7.5 ? "COMPACT" : "OPTIMAL" },
     ];
 
     items.forEach((item, i) => {
         const col = i % 2;
         const row = Math.floor(i / 2);
-        const x = cardMargin + col * (itemW + 30);
-        const y = gridY + row * (itemH + 25);
+        const tx = mLeft + col * (tileW + tileGap);
+        const ty = gridTop + row * (tileH + tileGap);
 
-        drawGlassCard(ctx, x, y, itemW, itemH, 40);
+        _glassCard(ctx, tx, ty, tileW, tileH, 28);
 
-        // Score Mini-Indicator
-        ctx.fillStyle = getMetricColor(item.val, "0.15");
-        ctx.beginPath(); ctx.roundRect(x + 30, y + 30, 80, 40, 10); ctx.fill();
+        // Colored score pill
+        const mc = _metricColor(item.val);
+        ctx.fillStyle = mc.bg;
+        ctx.beginPath(); ctx.roundRect(tx + 20, ty + 18, 72, 36, 10); ctx.fill();
+
+        ctx.font = "900 22px Inter, Arial, sans-serif";
+        ctx.fillStyle = mc.text;
         ctx.textAlign = "center";
-        ctx.font = "900 24px Inter, sans-serif";
-        ctx.fillStyle = getMetricColor(item.val, "1");
-        ctx.fillText(Math.round(item.val * 10).toString(), x + 70, y + 58);
+        ctx.textBaseline = "middle";
+        ctx.fillText((item.val).toFixed(1), tx + 56, ty + 36);
 
         // Label
+        ctx.font = "900 17px Inter, Arial, sans-serif";
+        ctx.fillStyle = "rgba(255,255,255,0.30)";
         ctx.textAlign = "left";
-        drawTextFit(ctx, item.label, x + 30, y + 90, itemW - 60, "900 30px Inter, sans-serif", "rgba(255,255,255,0.3)", "left", "0px", "middle");
+        ctx.textBaseline = "alphabetic";
+        ctx.letterSpacing = "3px";
+        ctx.fillText(item.label, tx + 20, ty + 78);
+        ctx.letterSpacing = "0px";
 
         // Status
-        drawTextFit(ctx, item.status, x + 30, y + 130, itemW - 60, " italic 900 36px Inter, sans-serif", "#ffffff", "left", "0px", "middle");
+        ctx.font = "italic 900 26px Inter, Arial, sans-serif";
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(item.status, tx + 20, ty + 112);
 
-        // Progress Bar
-        const barY = y + 158;
-        const barW = itemW - 60;
-        ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
-        ctx.beginPath(); ctx.roundRect(x + 30, barY, barW, 6, 3); ctx.fill();
-        ctx.fillStyle = getMetricColor(item.val, "1");
-        ctx.beginPath(); ctx.roundRect(x + 30, barY, (item.val / 10) * barW, 6, 3); ctx.fill();
+        // Progress bar
+        const barX = tx + 20;
+        const barY = ty + tileH - 16;
+        const barW = tileW - 40;
+        ctx.fillStyle = "rgba(255,255,255,0.05)";
+        ctx.beginPath(); ctx.roundRect(barX, barY, barW, 5, 3); ctx.fill();
+        ctx.fillStyle = mc.text;
+        ctx.beginPath(); ctx.roundRect(barX, barY, (item.val / 10) * barW, 5, 3); ctx.fill();
     });
 
-    // ─── 5. Achievement Badge Section ───
-    const footerY = height - 320;
+    // ─── 6. Achievement Belt ─────────────────────────────────────────────────
+    const gridBottom = gridTop + 3 * (tileH + tileGap) - tileGap; // ~834 + 525 = 1359
+    const beltY = gridBottom + 36;                           // ~1395
+    const beltH = 120;
+
+    const belt = ctx.createLinearGradient(0, beltY, W, beltY + beltH);
+    belt.addColorStop(0, accentA + "33");
+    belt.addColorStop(0.5, accentA + "22");
+    belt.addColorStop(1, accentB + "33");
+    ctx.fillStyle = belt;
+    ctx.fillRect(0, beltY, W, beltH);
+
+    // Belt top/bottom lines
+    [[beltY, accentA], [beltY + beltH, accentB]].forEach(([y, color]) => {
+        const ln = ctx.createLinearGradient(0, 0, W, 0);
+        ln.addColorStop(0, "transparent");
+        ln.addColorStop(0.5, color as string);
+        ln.addColorStop(1, "transparent");
+        ctx.strokeStyle = ln;
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(0, y as number); ctx.lineTo(W, y as number); ctx.stroke();
+    });
+
     const pct = metrics.percentile ?? 50;
-
+    const beltText = `★  TOP ${Math.max(1, 100 - pct)}% GLOBAL  ★`;
+    ctx.font = "900 38px Inter, Arial, sans-serif";
+    ctx.fillStyle = accentA;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.letterSpacing = "6px";
     ctx.save();
-    ctx.shadowBlur = 30;
-    ctx.shadowColor = isElite ? "rgba(16, 185, 129, 0.3)" : "rgba(34, 211, 238, 0.2)";
-    const beltGrad = ctx.createLinearGradient(0, footerY, width, footerY);
-    beltGrad.addColorStop(0, isElite ? "#10b981" : "#22d3ee");
-    beltGrad.addColorStop(1, isElite ? "#34d399" : "#a855f7");
-    ctx.fillStyle = beltGrad;
-    ctx.fillRect(0, footerY, width, 140);
+    ctx.shadowBlur = 24;
+    ctx.shadowColor = accentA;
+    ctx.fillText(beltText, W / 2, beltY + beltH / 2);
     ctx.restore();
+    ctx.letterSpacing = "0px";
 
-    // Achievement Text with Fitting
-    const achievementText = `TOP ${100 - pct}% GLOBAL CANDIDATE`;
-    drawTextFit(ctx, achievementText, width / 2, footerY + 70, width - 100, "900 48px Inter, sans-serif", "#000000", "center", "6px", "middle");
+    // ─── 7. Potential / Flex Tagline ─────────────────────────────────────────
+    const tagY = beltY + beltH + 36;  // ~1551
 
-    // Footer Branding
-    ctx.font = "900 24px Inter, sans-serif";
-    ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
-    ctx.letterSpacing = "10px";
-    ctx.fillText("LOOKSMAX CLASH • GEN-1 AI ENGINE", width / 2, height - 100);
+    const tagline = isGod ? "GOD-TIER GENETICS CONFIRMED"
+        : isElite ? "ELITE GENETIC STRUCTURE DETECTED"
+            : `OPTIMIZATION PATH: ${metrics.potentialScore}/10 REACHABLE`;
 
-    // ─── Export ───
+    _textFit(ctx, tagline, W / 2, tagY, W - 160, "900 34px Inter, Arial, sans-serif", "rgba(255,255,255,0.55)", "center", "4px", "alphabetic");
+
+    // ─── 8. Bottom Branding ──────────────────────────────────────────────────
+    const brandY = H - 100;
+
+    // Divider
+    const div = ctx.createLinearGradient(0, 0, W, 0);
+    div.addColorStop(0, "transparent");
+    div.addColorStop(0.5, "rgba(255,255,255,0.12)");
+    div.addColorStop(1, "transparent");
+    ctx.strokeStyle = div;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(100, brandY - 28); ctx.lineTo(W - 100, brandY - 28); ctx.stroke();
+
+    ctx.font = "900 20px Inter, Arial, sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.letterSpacing = "8px";
+    ctx.fillText("LOOKSMAX CLASH  ·  GEN-1 AI ENGINE", W / 2, brandY);
+    ctx.letterSpacing = "0px";
+
+    // QR-style corner accent dots
+    for (const [cx, cy] of [[100, brandY + 30], [W - 100, brandY + 30]] as [number, number][]) {
+        ctx.fillStyle = "rgba(255,255,255,0.08)";
+        for (let s = 0; s < 3; s++) {
+            ctx.beginPath(); ctx.arc(cx + (s - 1) * 12, cy, 4 - s, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+
+    // ─── Export ───────────────────────────────────────────────────────────────
     const dataUrl = canvas.toDataURL("image/png");
     const link = document.createElement("a");
-    link.download = `elite-report-${metrics.overall.toFixed(1)}.png`;
+    link.download = `looksmax-report-${metrics.overall.toFixed(1)}.png`;
     link.href = dataUrl;
     link.click();
 }
 
-// ─── Helpers ───
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function drawGlassCard(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, radius: number) {
+function _glassCard(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
     ctx.save();
-    ctx.fillStyle = "rgba(255, 255, 255, 0.04)";
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, h, radius);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
-    ctx.lineWidth = 2;
+    ctx.fillStyle = "rgba(255,255,255,0.04)";
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.07)";
+    ctx.lineWidth = 1.5;
     ctx.stroke();
     ctx.restore();
 }
 
-function drawAmbientGlow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string) {
+function _glow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string) {
     const g = ctx.createRadialGradient(x, y, 0, x, y, r);
     g.addColorStop(0, color);
     g.addColorStop(1, "transparent");
@@ -223,32 +325,39 @@ function drawAmbientGlow(ctx: CanvasRenderingContext2D, x: number, y: number, r:
     ctx.fillRect(x - r, y - r, r * 2, r * 2);
 }
 
-function drawTextFit(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, font: string, color: string, align: CanvasTextAlign = "left", spacing: string = "0px", baseline: CanvasTextBaseline = "alphabetic") {
+function _textFit(
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    x: number, y: number,
+    maxW: number,
+    font: string,
+    color: string,
+    align: CanvasTextAlign = "left",
+    spacing = "0px",
+    baseline: CanvasTextBaseline = "alphabetic"
+) {
     ctx.font = font;
     ctx.textAlign = align;
     ctx.letterSpacing = spacing;
     ctx.textBaseline = baseline;
 
-    let metrics = ctx.measureText(text);
-    let fontSizeMatch = font.match(/(\d+)px/);
-    let fontSize = fontSizeMatch ? parseInt(fontSizeMatch[1]) : 32;
-    let currentFont = font;
+    let m = ctx.measureText(text);
+    let fmatch = font.match(/(\d+)px/);
+    let fs = fmatch ? parseInt(fmatch[1]) : 28;
 
-    while (metrics.width > maxWidth && fontSize > 14) {
-        fontSize -= 2;
-        currentFont = font.replace(/\d+px/, `${fontSize}px`);
-        ctx.font = currentFont;
-        metrics = ctx.measureText(text);
+    while (m.width > maxW && fs > 14) {
+        fs -= 2;
+        ctx.font = font.replace(/\d+px/, `${fs}px`);
+        m = ctx.measureText(text);
     }
-
     ctx.fillStyle = color;
     ctx.fillText(text, x, y);
-    ctx.letterSpacing = "0px"; // Reset
+    ctx.letterSpacing = "0px";
 }
 
-function getMetricColor(val: number, opacity: string) {
-    if (val >= 8.0) return `rgba(16, 185, 129, ${opacity})`;
-    if (val >= 6.5) return `rgba(34, 211, 238, ${opacity})`;
-    if (val >= 5.0) return `rgba(250, 204, 21, ${opacity})`;
-    return `rgba(239, 68, 68, ${opacity})`;
+function _metricColor(val: number): { bg: string; text: string } {
+    if (val >= 8.0) return { bg: "rgba(16,185,129,0.18)", text: "#10b981" };
+    if (val >= 6.5) return { bg: "rgba(34,211,238,0.15)", text: "#22d3ee" };
+    if (val >= 5.0) return { bg: "rgba(250,204,21,0.15)", text: "#facc15" };
+    return { bg: "rgba(239,68,68,0.15)", text: "#ef4444" };
 }

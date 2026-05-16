@@ -299,11 +299,18 @@ export default function BattlePage() {
 
                 pc.ontrack = e => {
                     console.log("[WebRTC] Track received:", e.streams[0]?.id);
-                    if (remoteVideoRef.current && e.streams[0]) {
-                        remoteVideoRef.current.srcObject = e.streams[0];
-                        remoteVideoRef.current.play().catch(err =>
-                            console.warn('[WebRTC] remoteVideo.play() blocked:', err)
-                        );
+                    const vid = remoteVideoRef.current;
+                    if (vid && e.streams[0]) {
+                        vid.srcObject = e.streams[0];
+                        // Primary play attempt
+                        vid.play().catch(() => {
+                            // Fallback: play on canplay event (browser policy)
+                            const tryPlay = () => {
+                                vid.play().catch(err => console.warn('[WebRTC] remoteVideo.play() fallback failed:', err));
+                                vid.removeEventListener('canplay', tryPlay);
+                            };
+                            vid.addEventListener('canplay', tryPlay);
+                        });
                         setRemoteOk(true);
                     }
                 };
@@ -316,9 +323,17 @@ export default function BattlePage() {
                     const state = pc.connectionState;
                     console.log("[WebRTC] Connection state:", state);
                     setRtcState(state);
-                    if (state === "connected") {
+                    if (state === "connected" || state === "completed") {
                         setRemoteOk(true);
                         socket.emit("peer-connected", roomId);
+                    }
+                };
+                // Fallback: some browsers use iceConnectionState instead of connectionState
+                pc.oniceconnectionstatechange = () => {
+                    const s = pc.iceConnectionState;
+                    console.log("[WebRTC] ICE connection state:", s);
+                    if (s === "connected" || s === "completed") {
+                        setRemoteOk(true);
                     }
                 };
                 return pc;
@@ -427,9 +442,10 @@ export default function BattlePage() {
         };
     }, [mounted, socket, roomId, buildPC, startCamera, sendOffer]); // eslint-disable-line
 
-    // ── Send ready when face is detected ─────────────────────────────────────
+    // ── Send ready when face is detected (does NOT wait for WebRTC — server triggers countdown) ──
     useEffect(() => {
         if (localFaceReady && playerCount >= 2) {
+            // Signal ready immediately — WebRTC video link can finalize independently in parallel
             sendReady();
         }
     }, [localFaceReady, playerCount, sendReady]);
@@ -566,10 +582,10 @@ export default function BattlePage() {
                             "📸 Face Detection Required"
                         ) : playerCount < 2 ? (
                             "⌛ Waiting for Opponent..."
-                        ) : rtcState !== "connected" ? (
-                            "🔗 Connecting Video Feed..."
+                        ) : !remoteOk ? (
+                            "🔗 Syncing Video Feed... (match starting)"
                         ) : (
-                            "✅ Connected! Starting when both faces detected..."
+                            "✅ Ready — Match starting!"
                         )}
                     </div>
                 )}
