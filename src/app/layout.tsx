@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Face-Off | The Ultimate Looksmaxxing Battle",
+  title: "Looksmax Clash | The Ultimate Aesthetics Arena",
   description: "AI-powered real-time face rating battles. Competitive self-improvement for Gen-Z.",
   manifest: "/manifest.json",
 };

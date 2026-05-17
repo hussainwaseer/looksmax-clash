@@ -120,7 +120,7 @@ export default function JoinRoom() {
                         <div className="w-8 h-8 bg-gradient-to-br from-purple-600 to-cyan-400 rounded-lg flex items-center justify-center">
                             <Swords size={16} className="text-white" />
                         </div>
-                        <span className="text-sm font-black uppercase tracking-widest text-zinc-400">Face-Off</span>
+                        <span className="text-sm font-black uppercase tracking-widest text-zinc-400">Looksmax Clash</span>
                     </div>
 
                     <h1 className="text-2xl font-black mb-1 uppercase tracking-tighter text-center">Join Battle</h1>

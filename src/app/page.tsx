@@ -109,7 +109,7 @@ export default function LandingPage() {
             <motion.div whileHover={{ rotate: 10, scale: 1.1 }} className="w-9 h-9 bg-gradient-to-br from-purple-600 to-cyan-400 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(157,0,255,0.4)]">
               <Swords size={18} className="text-white" />
             </motion.div>
-            <span className="text-xl font-black tracking-tighter uppercase italic text-white group-hover:text-cyan-400 transition-colors">Face-Off</span>
+            <span className="text-xl font-black tracking-tighter uppercase italic text-white group-hover:text-cyan-400 transition-colors">Looksmax Clash</span>
           </Link>
 
           {/* Desktop nav */}
@@ -323,9 +323,9 @@ export default function LandingPage() {
           <div className="w-5 h-5 bg-gradient-to-br from-purple-600 to-cyan-400 rounded flex items-center justify-center">
             <Swords size={11} className="text-white" />
           </div>
-          <span className="font-black text-zinc-500">Face-Off</span>
+          <span className="font-black text-zinc-500">Looksmax Clash</span>
         </div>
-        <p>© 2025 Face-Off — AI-Powered. Built for the mog era.</p>
+        <p>© 2025 Looksmax Clash — AI-Powered. Built for the mog era.</p>
       </footer>
     </div>
   );
