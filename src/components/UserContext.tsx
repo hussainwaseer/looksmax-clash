@@ -12,6 +12,12 @@ interface UserProfile {
     battles: number;
     wins: number;
     history: { date: string; score: number }[];
+    avatarUrl?: string;
+    bio?: string;
+    socials?: {
+        instagram?: string;
+        tiktok?: string;
+    }
 }
 
 interface UserContextType {
@@ -19,7 +25,7 @@ interface UserContextType {
     user: User | null;
     loading: boolean;
     updateElo: (change: number, won: boolean) => Promise<void>;
-    updateUsername: (name: string) => Promise<void>;
+    updateProfile: (data: Partial<UserProfile>) => Promise<void>;
     saveScan: (score: number) => Promise<void>;
 }
 
@@ -88,8 +94,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
-    const updateUsername = async (name: string) => {
-        const next = { ...profile, username: name };
+    const updateProfile = async (data: Partial<UserProfile>) => {
+        const next = { ...profile, ...data };
         if (user) {
             await setDoc(doc(db, "users", user.uid), next, { merge: true });
         } else {
@@ -111,7 +117,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     };
 
     return (
-        <UserContext.Provider value={{ profile, user, loading, updateElo, updateUsername, saveScan }}>
+        <UserContext.Provider value={{ profile, user, loading, updateElo, updateProfile, saveScan }}>
             {children}
         </UserContext.Provider>
     );

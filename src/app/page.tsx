@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
-import { Swords, Zap, ChevronRight, Menu, X, Star, Target, Flame, Crown, Users, Search, Trophy } from "lucide-react";
+import { Swords, Zap, ChevronRight, Menu, X, Star, Target, Flame, Crown, Users, Search, Trophy, LogOut } from "lucide-react";
 import Link from "next/link";
 import { useUser } from "@/components/UserContext";
 import { useSocket } from "@/components/SocketProvider";
@@ -121,17 +121,27 @@ export default function LandingPage() {
             <div className="flex items-center gap-4 pl-4 border-l border-white/10">
               {user ? (
                 <>
-                  <div className="flex flex-col items-end">
-                    <span className="text-[10px] font-black text-white leading-none mb-0.5">{profile.username}</span>
-                    <span className="text-[10px] font-bold text-cyan-400 leading-none">{profile.elo} ELO</span>
-                  </div>
+                  <Link href="/profile" className="flex items-center gap-4 group">
+                    <div className="flex flex-col items-end">
+                      <span className="text-[10px] font-black text-white leading-none mb-0.5 group-hover:text-cyan-400 transition-colors uppercase tracking-widest">{profile.username}</span>
+                      <span className="text-[10px] font-bold text-cyan-400 leading-none">{profile.elo} ELO</span>
+                    </div>
+                    <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden hover:bg-white/10 transition-colors">
+                      <div className="w-full h-full bg-gradient-to-br from-purple-500/20 to-cyan-400/20 flex items-center justify-center group-hover:from-purple-500/30 group-hover:to-cyan-400/30">
+                        {profile.avatarUrl ? (
+                          <img src={profile.avatarUrl} alt="Me" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-xs font-black text-white/50 uppercase">{profile.username[0]}</span>
+                        )}
+                      </div>
+                    </div>
+                  </Link>
                   <button
                     onClick={handleLogout}
-                    className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden hover:bg-white/10 transition-colors group"
+                    className="p-2 text-zinc-600 hover:text-red-400 transition-colors"
+                    title="Logout"
                   >
-                    <div className="w-full h-full bg-gradient-to-br from-purple-500/20 to-cyan-400/20 flex items-center justify-center group-hover:from-purple-500/30 group-hover:to-cyan-400/30">
-                      <span className="text-xs font-black text-white/50">{profile.username[0]}</span>
-                    </div>
+                    <LogOut size={16} />
                   </button>
                 </>
               ) : (
