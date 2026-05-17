@@ -310,8 +310,11 @@ export default function BattlePage() {
 
     const buildPC = useCallback(async () => {
         if (pcRef.current) return pcRef.current;
+        setConnLog("Starting Camera...");
         const s = streamRef.current || await startCamera();
-        if (!s) return null;
+        if (!s) { setConnLog("Cam Failed"); return null; }
+
+        setConnLog("Creating Peer...");
         const pc = new RTCPeerConnection(ICE);
         pcRef.current = pc;
         s.getTracks().forEach(t => pc.addTrack(t, s));
@@ -372,6 +375,7 @@ export default function BattlePage() {
         const onShouldOffer = async () => { if (!isSpectator) { isOfferer.current = true; await sendOffer(); } };
         const onSignal = async ({ signal }: any) => {
             if (isSpectator) return;
+            setConnLog(`Signal: ${signal.type}`);
             const pc = pcRef.current || await buildPC(); if (!pc) return;
 
             try {
@@ -443,13 +447,15 @@ export default function BattlePage() {
 
     useEffect(() => {
         if (!isSpectator && localFaceReady && playerCount >= 2 && status === "waiting") sendReady();
+    }, [localFaceReady, playerCount, sendReady, isSpectator, status]);
 
-        // Safety Fallback: Ensure buildPC is called if stuck in 'Ready to Sync' with 2 players
+    // Safety Fallback: Ensure buildPC is called if stuck in 'Ready to Sync' with 2 players
+    useEffect(() => {
         if (playerCount >= 2 && !isSpectator && !pcRef.current && status === "waiting") {
-            setConnLog("Auto-Syncing...");
+            setConnLog("Force Syncing...");
             buildPC();
         }
-    }, [localFaceReady, playerCount, sendReady, isSpectator, status, buildPC]);
+    }, [playerCount, isSpectator, status, buildPC]);
 
     useEffect(() => {
         if (status !== "countdown") return;
