@@ -274,7 +274,7 @@ export default function BattlePage() {
     const [isSpectator, setIsSpectator] = useState(false);
     const [oppElo, setOppElo] = useState<number | null>(null);
     const [authOpen, setAuthOpen] = useState(false);
-    const [connLog, setConnLog] = useState<string>("Initializing...");
+    const [connLog, setConnLog] = useState<string>("Ready to Sync");
     const [iceCount, setIceCount] = useState(0);
 
     useEffect(() => {
@@ -443,7 +443,13 @@ export default function BattlePage() {
 
     useEffect(() => {
         if (!isSpectator && localFaceReady && playerCount >= 2 && status === "waiting") sendReady();
-    }, [localFaceReady, playerCount, sendReady, isSpectator, status]);
+
+        // Safety Fallback: Ensure buildPC is called if stuck in 'Ready to Sync' with 2 players
+        if (playerCount >= 2 && !isSpectator && !pcRef.current && status === "waiting") {
+            setConnLog("Auto-Syncing...");
+            buildPC();
+        }
+    }, [localFaceReady, playerCount, sendReady, isSpectator, status, buildPC]);
 
     useEffect(() => {
         if (status !== "countdown") return;
