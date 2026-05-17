@@ -192,14 +192,51 @@ export default function FaceScanPage() {
     );
 }
 
+function FeatureBar({ label, score }: { label: string; score: number }) {
+    const pct = (score / 10) * 100;
+    const barColor =
+        score >= 8.0 ? "bg-emerald-400" :
+            score >= 7.0 ? "bg-cyan-400" :
+                score >= 6.0 ? "bg-white" :
+                    score >= 5.0 ? "bg-yellow-400" :
+                        score >= 4.0 ? "bg-orange-400" : "bg-red-500";
+    const textColor =
+        score >= 8.0 ? "text-emerald-400" :
+            score >= 7.0 ? "text-cyan-400" :
+                score >= 6.0 ? "text-white" :
+                    score >= 5.0 ? "text-yellow-400" :
+                        score >= 4.0 ? "text-orange-400" : "text-red-400";
+    return (
+        <div className="flex items-center gap-3">
+            <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500 w-24 shrink-0">{label}</span>
+            <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                <motion.div className={`h-full rounded-full ${barColor}`} initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.6, ease: "easeOut" }} />
+            </div>
+            <span className={`text-xs font-black tabular-nums w-6 text-right ${textColor}`}>{score}</span>
+        </div>
+    );
+}
+
 function ScanResultsView({ metrics, photo, onReset }: { metrics: FacialMetrics, photo: string | null, onReset: () => void }) {
     const { profile, user } = useUser();
     const [showPlan, setShowPlan] = useState(false);
     const [authOpen, setAuthOpen] = useState(false);
 
+    const features = [
+        { label: "Symmetry", score: metrics.symmetry },
+        { label: "Jawline", score: metrics.jawline },
+        { label: "Eye Area", score: metrics.eyeArea },
+        { label: "Facial Thirds", score: metrics.harmonics },
+        { label: "Canthal Tilt", score: metrics.canthalTilt ?? 5.5 },
+        { label: "Midface", score: metrics.midfaceRatio ?? 5.5 },
+        { label: "Philtrum", score: metrics.philtrum ?? 5.5 },
+    ];
+
     return (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-4xl flex flex-col gap-8 relative">
             <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} />
+
+            {/* Top: Photo + Stats */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="relative group rounded-[2.5rem] overflow-hidden border border-white/10 aspect-[3/4] bg-zinc-900">
                     {photo ? <img src={photo} className="w-full h-full object-cover" alt="Scan" /> : <div className="w-full h-full flex items-center justify-center text-zinc-800 font-black uppercase">No Snapshot</div>}
@@ -207,6 +244,12 @@ function ScanResultsView({ metrics, photo, onReset }: { metrics: FacialMetrics, 
                         <div className="text-[10px] font-black uppercase text-zinc-500">Overall Rating</div>
                         <div className={`text-4xl font-black ${getScoreColor(metrics.overall)}`}>{metrics.overall}</div>
                     </div>
+                    {metrics.percentile !== undefined && (
+                        <div className="absolute top-4 right-4 bg-black/80 px-3 py-2 rounded-2xl border border-white/10 text-center">
+                            <div className="text-[8px] font-black uppercase text-zinc-500">Percentile</div>
+                            <div className="text-lg font-black text-purple-400">Top {100 - metrics.percentile}%</div>
+                        </div>
+                    )}
                     <div className="absolute bottom-4 inset-x-4 bg-black/60 backdrop-blur-md p-4 rounded-3xl border border-white/10">
                         <div className="text-[10px] font-black uppercase text-zinc-500 mb-1">Status</div>
                         <div className={`text-xl font-black uppercase italic tracking-tighter ${getRankColor(metrics.overall)}`}>{getRankLabel(metrics.overall)}</div>
@@ -216,7 +259,7 @@ function ScanResultsView({ metrics, photo, onReset }: { metrics: FacialMetrics, 
                     {!user && (
                         <div className="bg-gradient-to-r from-purple-900/40 to-cyan-900/40 border border-white/10 p-5 rounded-3xl flex flex-col items-center gap-3 text-center">
                             <div className="text-[10px] font-black uppercase text-cyan-400 tracking-widest">Guest Progress</div>
-                            <p className="text-xs text-zinc-400 italic">"Log in to save your ELO and sync your scan history across devices."</p>
+                            <p className="text-xs text-zinc-400 italic">&quot;Log in to save your ELO and sync your scan history across devices.&quot;</p>
                             <button onClick={() => setAuthOpen(true)} className="px-6 py-2 bg-white text-black text-[10px] font-black uppercase tracking-widest rounded-xl hover:scale-105 transition-all">Sign In to Sync</button>
                         </div>
                     )}
@@ -227,21 +270,59 @@ function ScanResultsView({ metrics, photo, onReset }: { metrics: FacialMetrics, 
                             <div className="text-2xl font-black text-cyan-400">{metrics.potentialScore}</div>
                         </div>
                         <div className="bg-white/5 border border-white/10 p-4 rounded-3xl">
-                            <div className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1">Symmetry</div>
-                            <div className="text-2xl font-black text-white">{metrics.symmetry}%</div>
+                            <div className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1">Best Feature</div>
+                            <div className="text-xs font-black text-white leading-tight">{metrics.bestFeature}</div>
                         </div>
                     </div>
-                    <button onClick={() => setShowPlan(!showPlan)} className="w-full py-4 bg-gradient-to-r from-purple-600 to-cyan-500 text-white font-black uppercase tracking-widest rounded-2xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2">
-                        <Calendar size={18} /> {showPlan ? "Hide Improvement Plan" : "Generate 30-Day Plan"}
-                    </button>
-                    {showPlan && (
-                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="bg-white/5 border border-purple-500/20 rounded-3xl p-6 text-zinc-300 text-xs italic leading-relaxed">
-                            <p className="font-bold text-purple-400 mb-2 uppercase tracking-widest">PERSONALIZED STRATEGY:</p>
-                            Focus on improving your {metrics.weaknesses[0] || "jawline definition"}. We recommend a 30-day regimen of specific facial posture exercises and optimized hydration to reach your {metrics.potentialScore} potential.
-                        </motion.div>
-                    )}
                 </div>
             </div>
+
+            {/* Feature Breakdown */}
+            <div className="bg-white/5 border border-white/10 rounded-[2rem] p-6 flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Feature Breakdown</h3>
+                    <span className="text-[9px] text-zinc-600 font-black uppercase">Score / 10</span>
+                </div>
+                <div className="flex flex-col gap-3">
+                    {features.map(f => <FeatureBar key={f.label} label={f.label} score={f.score} />)}
+                </div>
+            </div>
+
+            {/* Strengths + Weaknesses */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-emerald-950/40 border border-emerald-500/20 rounded-3xl p-5">
+                    <h3 className="text-[9px] font-black uppercase tracking-widest text-emerald-400 mb-3">✦ Strengths</h3>
+                    <ul className="flex flex-col gap-2">
+                        {metrics.strengths.map((s, i) => (
+                            <li key={i} className="text-[10px] text-zinc-300 font-bold flex items-center gap-2">
+                                <span className="w-1 h-1 rounded-full bg-emerald-400 shrink-0" />{s}
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+                <div className="bg-red-950/40 border border-red-500/20 rounded-3xl p-5">
+                    <h3 className="text-[9px] font-black uppercase tracking-widest text-red-400 mb-3">✦ Weaknesses</h3>
+                    <ul className="flex flex-col gap-2">
+                        {metrics.weaknesses.map((w, i) => (
+                            <li key={i} className="text-[10px] text-zinc-300 font-bold flex items-center gap-2">
+                                <span className="w-1 h-1 rounded-full bg-red-400 shrink-0" />{w}
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            </div>
+
+            {/* 30-Day Plan */}
+            <button onClick={() => setShowPlan(!showPlan)} className="w-full py-4 bg-gradient-to-r from-purple-600 to-cyan-500 text-white font-black uppercase tracking-widest rounded-2xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+                <Calendar size={18} /> {showPlan ? "Hide Improvement Plan" : "Generate 30-Day Plan"}
+            </button>
+            {showPlan && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="bg-white/5 border border-purple-500/20 rounded-3xl p-6 text-zinc-300 text-xs italic leading-relaxed">
+                    <p className="font-bold text-purple-400 mb-2 uppercase tracking-widest">PERSONALIZED STRATEGY:</p>
+                    Focus on improving your {metrics.weaknesses[0] || "jawline definition"}. We recommend a 30-day regimen of specific facial posture exercises and optimized hydration to reach your {metrics.potentialScore} potential.
+                </motion.div>
+            )}
+
             <div className="flex gap-4 justify-center">
                 <button onClick={onReset} className="px-10 py-4 bg-zinc-900 border border-white/10 rounded-2xl font-black uppercase tracking-widest text-xs">New Scan</button>
                 <button onClick={() => downloadMoggingCard(metrics)} className="px-10 py-4 bg-white text-black rounded-2xl font-black uppercase tracking-widest text-xs flex items-center gap-2"><Download size={16} /> Save Card</button>
@@ -249,3 +330,4 @@ function ScanResultsView({ metrics, photo, onReset }: { metrics: FacialMetrics, 
         </motion.div>
     );
 }
+

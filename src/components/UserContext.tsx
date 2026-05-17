@@ -53,9 +53,15 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
                     if (snap.exists()) {
                         setProfile(snap.data() as UserProfile);
                     } else {
-                        // Initialize new user with Guest data if available
+                        // Initialize new user — read localStorage directly to avoid stale closure
                         const guestData = localStorage.getItem("looksmax_user_profile");
-                        const proto = guestData ? JSON.parse(guestData) : profile;
+                        const proto = guestData ? JSON.parse(guestData) : {
+                            username: "Guest",
+                            elo: 1000,
+                            battles: 0,
+                            wins: 0,
+                            history: [],
+                        };
                         const newProfile = { ...proto, uid: u.uid };
                         setDoc(userDoc, newProfile);
                     }

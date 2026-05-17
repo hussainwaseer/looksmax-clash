@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useUser } from "@/components/UserContext";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -27,6 +27,19 @@ export default function ProfilePage() {
     });
 
     const [updating, setUpdating] = useState(false);
+
+    // Sync editData when profile loads from Firestore (auth is async — profile may arrive late)
+    useEffect(() => {
+        if (!isEditing) {
+            setEditData({
+                username: profile.username,
+                avatarUrl: profile.avatarUrl || "",
+                bio: profile.bio || "",
+                instagram: profile.socials?.instagram || "",
+                tiktok: profile.socials?.tiktok || ""
+            });
+        }
+    }, [profile, isEditing]);
 
     const handleSave = async () => {
         setUpdating(true);

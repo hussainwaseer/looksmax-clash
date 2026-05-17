@@ -274,7 +274,7 @@ export default function BattlePage() {
     const [isSpectator, setIsSpectator] = useState(false);
     const [oppElo, setOppElo] = useState<number | null>(null);
     const [authOpen, setAuthOpen] = useState(false);
-    const [connLog, setConnLog] = useState<string>("Ready to Sync");
+    const [connLog, setConnLog] = useState<string>("Waiting...");
     const [iceCount, setIceCount] = useState(0);
 
     useEffect(() => {
@@ -520,7 +520,7 @@ export default function BattlePage() {
     const urgentTimer = timeLeft <= 5 && status === "battling";
 
     return (
-        <div className="min-h-screen bg-black text-white relative overflow-hidden flex flex-col">
+        <div className="h-screen bg-black text-white relative overflow-hidden flex flex-col">
             <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} />
             <div className="fixed inset-0 z-0 pointer-events-none">
                 <div className="absolute top-0 left-1/4 w-[600px] h-[400px] bg-purple-900/20 rounded-full blur-[120px]" />
@@ -570,8 +570,8 @@ export default function BattlePage() {
                 </motion.div>
             )}
 
-            <div className="relative z-10 flex-1 grid grid-cols-1 md:grid-cols-2 gap-2 pt-[140px] pb-2 px-2">
-                <div className={`relative overflow-hidden rounded-2xl bg-zinc-950 min-h-[35vh] border-2 ${status === "battling" && moggingLabel === "mogging" ? "border-emerald-400/60 shadow-[0_0_40px_rgba(52,211,153,0.2)]" : "border-white/8"}`}>
+            <div className="relative z-10 flex-1 grid grid-rows-2 md:grid-rows-1 grid-cols-1 md:grid-cols-2 gap-2 pt-[140px] pb-2 px-2 min-h-0">
+                <div className={`relative overflow-hidden rounded-2xl bg-zinc-950 min-h-0 h-full border-2 ${status === "battling" && moggingLabel === "mogging" ? "border-emerald-400/60 shadow-[0_0_40px_rgba(52,211,153,0.2)]" : "border-white/8"}`}>
                     {!isSpectator ? (
                         <>
                             <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover scale-x-[-1]" />
@@ -599,7 +599,7 @@ export default function BattlePage() {
                     </div>
                 </div>
 
-                <div className={`relative overflow-hidden rounded-2xl bg-zinc-950 min-h-[35vh] border-2 ${status === "battling" && moggingLabel === "mogged" ? "border-red-400/60 shadow-[0_0_40px_rgba(239,68,68,0.2)]" : "border-white/8"}`}>
+                <div className={`relative overflow-hidden rounded-2xl bg-zinc-950 min-h-0 h-full border-2 ${status === "battling" && moggingLabel === "mogged" ? "border-red-400/60 shadow-[0_0_40px_rgba(239,68,68,0.2)]" : "border-white/8"}`}>
                     <video ref={remoteVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                     {!remoteOk && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm">
