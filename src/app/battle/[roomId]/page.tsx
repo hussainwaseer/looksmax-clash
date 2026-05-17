@@ -16,6 +16,10 @@ const ICE: RTCConfiguration = {
     iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
+        { urls: "stun:stun2.l.google.com:19302" },
+        { urls: "stun:stun3.l.google.com:19302" },
+        { urls: "stun:stun.voiparound.com" },
+        { urls: "stun:stun.ekiga.net" },
         {
             urls: [
                 "turn:openrelay.metered.ca:80",
@@ -270,6 +274,8 @@ export default function BattlePage() {
     const [isSpectator, setIsSpectator] = useState(false);
     const [oppElo, setOppElo] = useState<number | null>(null);
     const [authOpen, setAuthOpen] = useState(false);
+    const [connLog, setConnLog] = useState<string>("Initializing...");
+    const [iceCount, setIceCount] = useState(0);
 
     useEffect(() => {
         setMounted(true);
@@ -299,6 +305,9 @@ export default function BattlePage() {
         return s;
     }, []);
 
+    const retryRef = useRef<(() => Promise<void>) | null>(null);
+    const offerRef = useRef<(() => Promise<void>) | null>(null);
+
     const buildPC = useCallback(async () => {
         if (pcRef.current) return pcRef.current;
         const s = streamRef.current || await startCamera();
@@ -315,11 +324,21 @@ export default function BattlePage() {
             }
         };
         pc.onicecandidate = e => {
-            if (e.candidate) socket.emit("send-signal", { roomId, signal: { type: "candidate", candidate: e.candidate } });
+            if (e.candidate) {
+                setIceCount(c => c + 1);
+                socket.emit("send-signal", { roomId, signal: { type: "candidate", candidate: e.candidate } });
+            }
         };
+        pc.onicegatheringstatechange = () => setConnLog(`ICE: ${pc.iceGatheringState}`);
+        pc.onsignalingstatechange = () => setConnLog(`Signaling: ${pc.signalingState}`);
         pc.onconnectionstatechange = () => {
             setRtcState(pc.connectionState);
+            setConnLog(`RTC: ${pc.connectionState}`);
             if (pc.connectionState === "connected") { setRemoteOk(true); socket.emit("peer-connected", roomId); }
+            if (pc.connectionState === "failed") {
+                setConnLog("RTC: Failed - Retrying...");
+                setTimeout(() => retryRef.current?.(), 1000);
+            }
         };
         return pc;
     }, [socket, roomId, startCamera]);
@@ -330,13 +349,15 @@ export default function BattlePage() {
         await pc.setLocalDescription(offer);
         socket.emit("send-signal", { roomId, signal: { type: "offer", sdp: offer } });
     }, [buildPC, socket, roomId]);
+    offerRef.current = sendOffer;
 
     const retryConnection = useCallback(async () => {
         pcRef.current?.close(); pcRef.current = null;
         setRemoteOk(false); setRtcState("new");
         const pc = await buildPC();
-        if (pc && isOfferer.current) await sendOffer();
-    }, [buildPC, sendOffer]);
+        if (pc && isOfferer.current) await offerRef.current?.();
+    }, [buildPC]);
+    retryRef.current = retryConnection;
 
     const sendReady = useCallback(() => socket.emit("player-ready", roomId), [socket, roomId]);
 
@@ -351,27 +372,42 @@ export default function BattlePage() {
         const onShouldOffer = async () => { if (!isSpectator) { isOfferer.current = true; await sendOffer(); } };
         const onSignal = async ({ signal }: any) => {
             if (isSpectator) return;
-            let pc = pcRef.current || await buildPC(); if (!pc) return;
-            if (signal.type === "offer") {
-                await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-                remoteDescriptionSet.current = true;
-                const ans = await pc.createAnswer();
-                await pc.setLocalDescription(ans);
-                socket.emit("send-signal", { roomId, signal: { type: "answer", sdp: ans } });
-                while (pendingCandidates.current.length > 0) {
-                    const cand = pendingCandidates.current.shift();
-                    if (cand) await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => { });
+            const pc = pcRef.current || await buildPC(); if (!pc) return;
+
+            try {
+                if (signal.type === "offer") {
+                    setConnLog("Offer Received");
+                    await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+                    remoteDescriptionSet.current = true;
+                    const ans = await pc.createAnswer();
+                    await pc.setLocalDescription(ans);
+                    socket.emit("send-signal", { roomId, signal: { type: "answer", sdp: ans } });
+
+                    // Drain pending candidates
+                    process.stdout.write(`[Handshake] Draining ${pendingCandidates.current.length} candidates\n`);
+                    while (pendingCandidates.current.length > 0) {
+                        const cand = pendingCandidates.current.shift();
+                        if (cand) await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => { });
+                    }
+                } else if (signal.type === "answer") {
+                    setConnLog("Answer Received");
+                    await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+                    remoteDescriptionSet.current = true;
+                    while (pendingCandidates.current.length > 0) {
+                        const cand = pendingCandidates.current.shift();
+                        if (cand) await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => { });
+                    }
+                } else if (signal.type === "candidate") {
+                    if (remoteDescriptionSet.current) {
+                        await pc.addIceCandidate(new RTCIceCandidate(signal.candidate)).catch(() => { });
+                    } else {
+                        pendingCandidates.current.push(signal.candidate);
+                    }
                 }
-            } else if (signal.type === "answer") {
-                await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-                remoteDescriptionSet.current = true;
-                while (pendingCandidates.current.length > 0) {
-                    const cand = pendingCandidates.current.shift();
-                    if (cand) await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => { });
-                }
-            } else if (signal.type === "candidate") {
-                if (remoteDescriptionSet.current) await pc.addIceCandidate(new RTCIceCandidate(signal.candidate)).catch(() => { });
-                else pendingCandidates.current.push(signal.candidate);
+            } catch (err) {
+                console.error("[WebRTC] Signal Error:", err);
+                setConnLog("Connect Error - Retrying");
+                retryConnection();
             }
         };
         const onOppScore = ({ metrics, elo }: { metrics: FacialMetrics, elo?: number }) => {
@@ -555,8 +591,15 @@ export default function BattlePage() {
                     <video ref={remoteVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                     {!remoteOk && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm">
-                            <p className="text-zinc-500 text-[10px] font-black uppercase">{playerCount < 2 ? "Waiting..." : "Connecting..."}</p>
-                            {playerCount >= 2 && !isSpectator && <button onClick={retryConnection} className="mt-2 text-[8px] text-cyan-400 uppercase font-bold underline">Retry Sync</button>}
+                            <div className="flex flex-col items-center gap-2">
+                                <p className="text-zinc-500 text-[10px] font-black uppercase">{playerCount < 2 ? "Waiting..." : "Connecting..."}</p>
+                                <div className="flex items-center gap-1.5">
+                                    <div className="w-1 h-1 rounded-full bg-cyan-400 animate-pulse" />
+                                    <span className="text-[8px] text-zinc-600 font-bold uppercase tracking-tighter">{connLog}</span>
+                                </div>
+                                {iceCount > 0 && <span className="text-[8px] text-zinc-700 font-black tracking-widest">{iceCount} NODES FOUND</span>}
+                            </div>
+                            {playerCount >= 2 && !isSpectator && <button onClick={retryConnection} className="mt-4 px-4 py-1.5 bg-white/5 border border-white/10 rounded-lg text-[8px] text-cyan-400 uppercase font-black hover:bg-white/10 transition-colors">Manual Sync</button>}
                         </div>
                     )}
                     <div className="absolute bottom-3 right-3 flex items-center gap-2">
