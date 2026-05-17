@@ -2,8 +2,12 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
-import { Swords, Zap, ChevronRight, Menu, X, Star, Target, Flame, Crown, Users } from "lucide-react";
+import { Swords, Zap, ChevronRight, Menu, X, Star, Target, Flame, Crown, Users, Search, Trophy } from "lucide-react";
 import Link from "next/link";
+import { useUser } from "@/components/UserContext";
+import { useSocket } from "@/components/SocketProvider";
+import { useRouter } from "next/navigation";
+import { AuthModal } from "@/components/AuthModal";
 
 const STATS = [
   { label: "Battles Fought", value: "48,291", icon: "⚔️" },
@@ -24,6 +28,7 @@ export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [activeBattles, setActiveBattles] = useState(24);
+  const [isSearching, setIsSearching] = useState(false);
   const heroRef = useRef<HTMLDivElement>(null);
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
@@ -31,6 +36,11 @@ export default function LandingPage() {
   const orbY = useTransform(mouseY, [-1, 1], [-20, 20]);
   const orbX2 = useTransform(mouseX, [-1, 1], [30, -30]);
   const orbY2 = useTransform(mouseY, [-1, 1], [20, -20]);
+
+  const { profile, user, loading } = useUser();
+  const socket = useSocket();
+  const router = useRouter();
+  const [authOpen, setAuthOpen] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
@@ -43,6 +53,15 @@ export default function LandingPage() {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    if (!socket) return;
+    socket.on("match-found", (roomId: string) => {
+      setIsSearching(false);
+      router.push(`/battle/${roomId}`);
+    });
+    return () => { socket.off("match-found"); };
+  }, [socket, router]);
+
   const handleMouseMove = (e: React.MouseEvent) => {
     const rect = heroRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -50,8 +69,24 @@ export default function LandingPage() {
     mouseY.set(((e.clientY - rect.top) / rect.height - 0.5) * 2);
   };
 
+  const handleFindMatch = () => {
+    if (isSearching) {
+      socket.emit("cancel-match");
+      setIsSearching(false);
+    } else {
+      socket.emit("find-match");
+      setIsSearching(true);
+    }
+  };
+
+  const handleLogout = () => {
+    const { auth } = require("@/lib/firebase");
+    require("firebase/auth").signOut(auth);
+  };
+
   return (
     <div className="min-h-screen bg-[#050505] text-white selection:bg-purple-500 selection:text-white overflow-x-hidden">
+      <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} />
 
       {/* ── Animated Background ── */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
@@ -81,10 +116,33 @@ export default function LandingPage() {
           <nav className="hidden md:flex gap-8 items-center text-sm font-medium uppercase tracking-widest text-zinc-400">
             <Link href="/scan" className="hover:text-cyan-400 transition-colors">Face Scan</Link>
             <Link href="/join" className="hover:text-cyan-400 transition-colors">Join Battle</Link>
-            <Link href="/create"
-              className="bg-white text-black px-6 py-2 rounded-full font-black uppercase tracking-widest hover:bg-cyan-400 transition-all text-xs shadow-[0_0_20px_rgba(255,255,255,0.1)] active:scale-95">
-              Start Battle
-            </Link>
+
+            {/* User Profile Badge */}
+            <div className="flex items-center gap-4 pl-4 border-l border-white/10">
+              {user ? (
+                <>
+                  <div className="flex flex-col items-end">
+                    <span className="text-[10px] font-black text-white leading-none mb-0.5">{profile.username}</span>
+                    <span className="text-[10px] font-bold text-cyan-400 leading-none">{profile.elo} ELO</span>
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden hover:bg-white/10 transition-colors group"
+                  >
+                    <div className="w-full h-full bg-gradient-to-br from-purple-500/20 to-cyan-400/20 flex items-center justify-center group-hover:from-purple-500/30 group-hover:to-cyan-400/30">
+                      <span className="text-xs font-black text-white/50">{profile.username[0]}</span>
+                    </div>
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => setAuthOpen(true)}
+                  className="px-6 py-2.5 bg-white/5 border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-colors"
+                >
+                  Sign In
+                </button>
+              )}
+            </div>
           </nav>
 
           {/* Mobile hamburger */}
@@ -104,16 +162,23 @@ export default function LandingPage() {
           {mobileNavOpen && (
             <motion.div initial={{ opacity: 0, y: -10, height: 0 }} animate={{ opacity: 1, y: 0, height: "auto" }} exit={{ opacity: 0, y: -10, height: 0 }}
               className="md:hidden absolute top-full left-0 right-0 bg-black/98 backdrop-blur-2xl border-b border-white/8 py-6 px-6 flex flex-col gap-4">
-              {["How it works", "Features", "Leaderboard"].map(item => (
-                <a key={item} href={`#${item.toLowerCase().replace(/ /g, "-")}`}
+              <div className="flex items-center gap-4 pb-4 border-b border-white/5">
+                <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
+                  <span className="text-lg font-black text-cyan-400">{profile.username[0]}</span>
+                </div>
+                <div>
+                  <div className="text-sm font-black text-white uppercase">{profile.username}</div>
+                  <div className="text-xs font-bold text-zinc-500">{profile.elo} ELO • {profile.battles} BATTLES</div>
+                </div>
+              </div>
+              {["Face Scan", "Join Battle"].map(item => (
+                <Link key={item} href={`/${item.toLowerCase().replace(/ /g, "")}`}
                   className="text-zinc-400 hover:text-white py-2 text-sm font-bold uppercase tracking-widest transition-colors border-b border-white/5"
-                  onClick={() => setMobileNavOpen(false)}>{item}</a>
+                  onClick={() => setMobileNavOpen(false)}>{item}</Link>
               ))}
               <div className="flex flex-col gap-3 pt-2">
-                <Link href="/join" className="w-full py-3 border border-white/10 bg-white/5 font-black uppercase tracking-widest rounded-xl text-center hover:bg-white/10 transition-colors text-sm"
-                  onClick={() => setMobileNavOpen(false)}>Join Battle</Link>
                 <Link href="/create" className="w-full py-3 bg-white text-black font-black uppercase tracking-widest rounded-xl text-center hover:bg-cyan-400 transition-colors text-sm"
-                  onClick={() => setMobileNavOpen(false)}>Create Battle</Link>
+                  onClick={() => setMobileNavOpen(false)}>Create Match</Link>
               </div>
             </motion.div>
           )}
@@ -148,20 +213,44 @@ export default function LandingPage() {
             The most addictive self-improvement arena for Gen-Z.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-10">
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-14 w-full px-10">
+            {/* Find Match Button (Random) */}
+            <button
+              onClick={handleFindMatch}
+              className={`group relative w-full sm:w-[280px] py-6 rounded-2xl overflow-hidden active:scale-95 transition-all text-center shadow-2xl border ${isSearching ? "bg-red-500/10 border-red-500/30 text-red-500" : "bg-white text-black border-white"}`}
+            >
+              <div className="relative z-10 flex flex-col items-center gap-1">
+                {isSearching ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Search className="animate-spin" size={20} />
+                      <span className="text-sm font-black uppercase tracking-[0.2em]">Searching...</span>
+                    </div>
+                    <span className="text-[10px] font-bold opacity-70 uppercase tracking-widest">Click to Cancel</span>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Zap size={20} fill="black" />
+                      <span className="text-sm font-black uppercase tracking-[0.2em]">Find Match</span>
+                    </div>
+                    <span className="text-[10px] font-bold opacity-60 uppercase tracking-widest">Auto Matchmaking</span>
+                  </>
+                )}
+              </div>
+              {!isSearching && <div className="absolute inset-0 bg-cyan-400 -translate-x-full group-hover:translate-x-0 transition-transform duration-300" />}
+            </button>
+
             <Link href="/scan"
-              className="group relative w-full sm:w-auto px-12 py-5 bg-gradient-to-r from-purple-600 to-cyan-500 text-white font-black uppercase tracking-widest rounded-2xl overflow-hidden active:scale-95 transition-transform text-center shadow-[0_0_40px_rgba(34,211,238,0.25)] text-sm">
-              <span className="relative z-10 flex items-center justify-center gap-2">Solo Face Scan <Zap size={16} fill="white" /></span>
-              <div className="absolute inset-0 bg-white -translate-x-full group-hover:translate-x-0 transition-transform duration-300 opacity-10" />
-            </Link>
-            <Link href="/create"
-              className="group relative w-full sm:w-auto px-12 py-5 bg-white text-black font-black uppercase tracking-widest rounded-2xl overflow-hidden active:scale-95 transition-transform text-center shadow-[0_0_40px_rgba(255,255,255,0.15)] text-sm">
-              <span className="relative z-10 flex items-center justify-center gap-2">Create Battle <Swords size={16} /></span>
-              <div className="absolute inset-0 bg-cyan-400 -translate-x-full group-hover:translate-x-0 transition-transform duration-300" />
-            </Link>
-            <Link href="/join"
-              className="w-full sm:w-auto px-12 py-5 border border-white/15 bg-white/5 backdrop-blur-md font-black uppercase tracking-widest rounded-2xl hover:bg-white/10 active:scale-95 transition-all flex items-center justify-center gap-2 text-sm">
-              Join Room <ChevronRight size={18} />
+              className="group relative w-full sm:w-[280px] py-6 bg-zinc-900 border border-white/5 text-white rounded-2xl overflow-hidden active:scale-95 transition-all text-center">
+              <div className="relative z-10 flex flex-col items-center gap-1">
+                <div className="flex items-center gap-2">
+                  <Target size={20} className="text-purple-400" />
+                  <span className="text-sm font-black uppercase tracking-[0.2em]">Solo Scan</span>
+                </div>
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">AI Assessment</span>
+              </div>
+              <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity" />
             </Link>
           </div>
 
@@ -198,33 +287,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── How It Works ── */}
-      <section id="how-it-works" className="relative z-10 py-28 px-6 border-y border-white/5 bg-white/[0.015]">
-        <div className="container mx-auto max-w-5xl">
-          <motion.h2 initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
-            className="text-3xl md:text-5xl font-black uppercase tracking-tighter text-center mb-16">
-            How It Works
-          </motion.h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {[
-              { step: "01", icon: <Target size={22} className="text-cyan-400" />, title: "Create a Room", desc: "Start a battle room, get a unique 6-char code. No signup. No BS." },
-              { step: "02", icon: <Users size={22} className="text-purple-400" />, title: "Invite Your Rival", desc: "Share the code. Opponent joins from any device. WebRTC connects automatically." },
-              { step: "03", icon: <Star size={22} className="text-yellow-400" />, title: "AI Judges", desc: "After 20 seconds, geometric AI scores 4 metrics. Winner crowned instantly." },
-            ].map((item, i) => (
-              <motion.div key={i} initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
-                transition={{ delay: i * 0.15 }} whileHover={{ y: -5 }}
-                className="relative p-8 glass-card border border-white/6 hover:border-cyan-500/20 transition-all cursor-default group">
-                <div className="text-[3.5rem] font-black text-white/4 absolute top-4 right-5 select-none group-hover:text-white/8 transition-colors">{item.step}</div>
-                <div className="w-11 h-11 rounded-xl bg-white/5 flex items-center justify-center mb-5 group-hover:bg-white/10 transition-colors">{item.icon}</div>
-                <h3 className="text-base font-black uppercase tracking-tight mb-2">{item.title}</h3>
-                <p className="text-zinc-500 text-sm leading-relaxed">{item.desc}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ── Leaderboard ── */}
       <section id="leaderboard" className="relative z-10 py-28 px-6">
         <div className="container mx-auto max-w-xl">
@@ -253,25 +315,6 @@ export default function LandingPage() {
             ))}
           </div>
         </div>
-      </section>
-
-      {/* ── CTA ── */}
-      <section className="relative z-10 py-28 px-6 text-center border-t border-white/5 overflow-hidden">
-        {/* Glow */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-[600px] h-[300px] bg-purple-600/12 rounded-full blur-[100px]" />
-        </div>
-        <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="relative">
-          <h2 className="text-4xl md:text-7xl font-black uppercase tracking-tighter mb-6">
-            Ready to{" "}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400">dominate?</span>
-          </h2>
-          <p className="text-zinc-500 mb-10 text-sm uppercase tracking-widest">No signup. No BS. Just results.</p>
-          <Link href="/create"
-            className="group inline-flex items-center gap-3 px-14 py-5 bg-white text-black font-black uppercase tracking-widest rounded-2xl hover:bg-cyan-400 transition-all active:scale-95 text-base shadow-[0_0_50px_rgba(255,255,255,0.12)] overflow-hidden relative">
-            <span className="relative z-10 flex items-center gap-3">Start Battle <ChevronRight size={22} /></span>
-          </Link>
-        </motion.div>
       </section>
 
       {/* ── Footer ── */}

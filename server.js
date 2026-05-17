@@ -67,17 +67,24 @@ app.prepare().then(() => {
         }, 6000);
     }
 
-    // ── Room timeout cleanup — runs every 10 minutes ──────────────────────────
+    // ── Room timeout cleanup — runs every 5 minutes ──────────────────────────
     setInterval(() => {
         const now = Date.now();
         for (const [roomId, room] of rooms.entries()) {
-            // Rooms older than 10 minutes with no active battle are stale
-            if (now - room.createdAt > 10 * 60 * 1000 && room.status !== 'battling') {
+            // Cleanup conditions:
+            // 1. Room is empty (no players AND no spectators)
+            // 2. Room is older than 15 mins and never started
+            // 3. Room is older than 30 mins (absolute safety)
+            const isStale = (now - room.createdAt > 15 * 60 * 1000 && room.status === 'waiting');
+            const isDead = (room.players.length === 0 && room.spectators.length === 0);
+            const isAncient = (now - room.createdAt > 30 * 60 * 1000);
+
+            if (isStale || isDead || isAncient) {
                 rooms.delete(roomId);
-                console.log(`[Server] Cleaned up stale room: ${roomId}`);
+                console.log(`[Server] Cleaned up room: ${roomId} (Reason: ${isStale ? 'Stale' : isDead ? 'Empty' : 'Ancient'})`);
             }
         }
-    }, 10 * 60 * 1000);
+    }, 5 * 60 * 1000);
 
     io.on('connection', (socket) => {
         console.log('[Server] User connected:', socket.id);
@@ -229,9 +236,10 @@ app.prepare().then(() => {
             socket.to(roomId).emit('receive-signal', { signal, from: socket.id });
         });
 
-        // ── Share Final Score ─────────────────────────────────────────────────
-        socket.on('share-score', ({ roomId, metrics }) => {
-            socket.to(roomId).emit('opponent-score', { metrics });
+        // ── Share Final Score & ELO Update ───────────────────────────────────
+        socket.on('share-score', ({ roomId, metrics, elo }) => {
+            socket.to(roomId).emit('opponent-score', { metrics, elo });
+            console.log(`[Server] ${socket.id} shared score in ${roomId}: ${metrics.overall}`);
         });
 
         // ── Disconnect ────────────────────────────────────────────────────────

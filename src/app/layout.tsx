@@ -4,6 +4,7 @@ import Script from "next/script";
 import "./globals.css";
 
 import { SocketProvider } from "@/components/SocketProvider";
+import { UserProvider } from "@/components/UserContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -37,9 +38,11 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <Script src="https://js.puter.com/v2/" strategy="beforeInteractive" />
-        <SocketProvider>
-          {children}
-        </SocketProvider>
+        <UserProvider>
+          <SocketProvider>
+            {children}
+          </SocketProvider>
+        </UserProvider>
 
 
 
