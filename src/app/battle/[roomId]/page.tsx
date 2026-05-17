@@ -388,7 +388,6 @@ export default function BattlePage() {
                     socket.emit("send-signal", { roomId, signal: { type: "answer", sdp: ans } });
 
                     // Drain pending candidates
-                    process.stdout.write(`[Handshake] Draining ${pendingCandidates.current.length} candidates\n`);
                     while (pendingCandidates.current.length > 0) {
                         const cand = pendingCandidates.current.shift();
                         if (cand) await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => { });
@@ -445,9 +444,20 @@ export default function BattlePage() {
         };
     }, [mounted, socket, roomId, buildPC, startCamera, sendOffer, isSpectator]);
 
+    // Send ready when face is detected and opponent has joined
     useEffect(() => {
         if (!isSpectator && localFaceReady && playerCount >= 2 && status === "waiting") sendReady();
     }, [localFaceReady, playerCount, sendReady, isSpectator, status]);
+
+    // Forced ready fallback: if AI is still loading or face not found after 8s with 2 players, send ready anyway
+    useEffect(() => {
+        if (isSpectator || playerCount < 2 || status !== "waiting") return;
+        const t = setTimeout(() => {
+            setConnLog("Force Ready (timeout)");
+            sendReady();
+        }, 8000);
+        return () => clearTimeout(t);
+    }, [playerCount, isSpectator, status, sendReady]);
 
     // Safety Fallback: Ensure buildPC is called if stuck in 'Ready to Sync' with 2 players
     useEffect(() => {
@@ -593,6 +603,27 @@ export default function BattlePage() {
                             <p className="text-zinc-600 text-[10px] font-black uppercase">Spectating P1</p>
                         </div>
                     )}
+                    {/* Local waiting overlay — show while waiting for battle to start */}
+                    {status === "waiting" && !isSpectator && (
+                        <div className="absolute inset-x-0 bottom-12 flex flex-col items-center gap-1 pointer-events-none">
+                            {aiLoading ? (
+                                <div className="bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-xl flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+                                    <span className="text-[9px] text-purple-300 font-black uppercase tracking-widest">Loading Face AI...</span>
+                                </div>
+                            ) : noFaceDetected ? (
+                                <div className="bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-xl flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full bg-yellow-400 animate-bounce" />
+                                    <span className="text-[9px] text-yellow-300 font-black uppercase tracking-widest">Position Your Face</span>
+                                </div>
+                            ) : (
+                                <div className="bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-xl flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                    <span className="text-[9px] text-emerald-300 font-black uppercase tracking-widest">Face Detected ✓</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <div className="absolute bottom-3 left-3 flex items-center gap-2">
                         <span className="bg-black/80 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border border-white/10">Player 1</span>
                         {!isSpectator && <span className="bg-cyan-500/20 text-cyan-400 text-[8px] font-black px-2 py-0.5 rounded border border-cyan-500/20">{profile.username}</span>}
@@ -602,16 +633,32 @@ export default function BattlePage() {
                 <div className={`relative overflow-hidden rounded-2xl bg-zinc-950 min-h-0 h-full border-2 ${status === "battling" && moggingLabel === "mogged" ? "border-red-400/60 shadow-[0_0_40px_rgba(239,68,68,0.2)]" : "border-white/8"}`}>
                     <video ref={remoteVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                     {!remoteOk && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm">
-                            <div className="flex flex-col items-center gap-2">
-                                <p className="text-zinc-500 text-[10px] font-black uppercase">{playerCount < 2 ? "Waiting..." : "Connecting..."}</p>
-                                <div className="flex items-center gap-1.5">
-                                    <div className="w-1 h-1 rounded-full bg-cyan-400 animate-pulse" />
-                                    <span className="text-[8px] text-zinc-600 font-bold uppercase tracking-tighter">{connLog}</span>
-                                </div>
-                                {iceCount > 0 && <span className="text-[8px] text-zinc-700 font-black tracking-widest">{iceCount} NODES FOUND</span>}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm gap-3">
+                            <div className="flex flex-col items-center gap-2 text-center">
+                                {playerCount < 2 ? (
+                                    <>
+                                        <div className="flex gap-1">
+                                            {[0, 1, 2].map(i => <div key={i} className="w-1.5 h-1.5 rounded-full bg-zinc-600 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />)}
+                                        </div>
+                                        <p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest">Waiting for Opponent</p>
+                                        <p className="text-zinc-600 text-[8px] font-bold">Share Room: <span className="text-cyan-400">{roomId}</span></p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="flex gap-1">
+                                            {[0, 1, 2].map(i => <div key={i} className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />)}
+                                        </div>
+                                        <p className="text-zinc-300 text-[10px] font-black uppercase tracking-widest">Opponent Joined!</p>
+                                        <p className="text-zinc-500 text-[8px] font-bold uppercase tracking-wider">{connLog}</p>
+                                        <p className="text-zinc-600 text-[8px] italic">Battle starts automatically...</p>
+                                    </>
+                                )}
                             </div>
-                            {playerCount >= 2 && !isSpectator && <button onClick={retryConnection} className="mt-4 px-4 py-1.5 bg-white/5 border border-white/10 rounded-lg text-[8px] text-cyan-400 uppercase font-black hover:bg-white/10 transition-colors">Manual Sync</button>}
+                            {playerCount >= 2 && !isSpectator && (
+                                <button onClick={retryConnection} className="px-4 py-1.5 bg-white/5 border border-white/10 rounded-lg text-[8px] text-cyan-400 uppercase font-black hover:bg-white/10 transition-colors">
+                                    Re-Sync
+                                </button>
+                            )}
                         </div>
                     )}
                     <div className="absolute bottom-3 right-3 flex items-center gap-2">

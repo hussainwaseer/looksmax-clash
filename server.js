@@ -40,7 +40,7 @@ app.prepare().then(() => {
         transports: ['websocket', 'polling'],
     });
 
-    // Start countdown when ALL players are face-ready (WebRTC is not a hard gate)
+    // Start countdown when ALL players are face-ready, OR at least 1 is ready + timeout
     function tryStartCountdown(roomId, room) {
         if (room.countdownStarted) return;
         if (room.players.length < 2) return;
@@ -53,18 +53,33 @@ app.prepare().then(() => {
         }
     }
 
-    // Force-start countdown after 6s timeout if players are ready but WebRTC is stalling
+    // Force-start: after 10s from FIRST player-ready, start even if 2nd player isn't face-ready
     function scheduleCountdownTimeout(roomId) {
         setTimeout(() => {
             const room = rooms.get(roomId);
             if (!room || room.countdownStarted) return;
-            if (room.players.length >= 2 && room.players.every(p => p.ready)) {
-                console.log(`[Server] Countdown timeout triggered for ${roomId}`);
+            if (room.players.length >= 2) {
+                // Force start regardless of whether 2nd player has face ready
+                console.log(`[Server] Force-start timeout triggered for ${roomId} (at least 1 player ready)`);
                 room.countdownStarted = true;
                 room.status = 'countdown';
                 io.to(roomId).emit('start-countdown');
             }
-        }, 6000);
+        }, 10000);
+    }
+
+    // Hard fallback: 25s after both players join, force-start no matter what
+    function scheduleHardStart(roomId) {
+        setTimeout(() => {
+            const room = rooms.get(roomId);
+            if (!room || room.countdownStarted) return;
+            if (room.players.length >= 2) {
+                console.log(`[Server] HARD FORCE-START triggered for ${roomId}`);
+                room.countdownStarted = true;
+                room.status = 'countdown';
+                io.to(roomId).emit('start-countdown');
+            }
+        }, 25000);
     }
 
     // ── Room timeout cleanup — runs every 5 minutes ──────────────────────────
@@ -130,6 +145,7 @@ app.prepare().then(() => {
                 io.to(roomId).emit('match-found', { roomId, playerCount: 2 });
                 io.to(roomId).emit('room-ready');
                 io.to(peerId).emit('should-create-offer', { roomId });
+                scheduleHardStart(roomId);
                 console.log(`[Matchmaking] Paired ${peerId} and ${socket.id} in ${roomId}`);
             } else {
                 matchQueue.push(socket.id);
@@ -198,6 +214,8 @@ app.prepare().then(() => {
                 io.to(roomId).emit('room-ready');
                 // The first player is always the offerer
                 io.to(offerId).emit('should-create-offer', { roomId });
+                // Hard fallback: force-start after 25s if still stuck
+                scheduleHardStart(roomId);
             }
         });
 
