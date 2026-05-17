@@ -245,6 +245,14 @@ app.prepare().then(() => {
         // ── Disconnect ────────────────────────────────────────────────────────
         socket.on('disconnect', () => {
             console.log('[Server] User disconnected:', socket.id);
+
+            // Remove from matchQueue if present
+            const qi = matchQueue.indexOf(socket.id);
+            if (qi !== -1) {
+                matchQueue.splice(qi, 1);
+                console.log(`[Server] Ghost removed from matchQueue: ${socket.id}`);
+            }
+
             for (const [roomId, room] of rooms.entries()) {
                 // Remove from spectators
                 const sIdx = room.spectators?.indexOf(socket.id) ?? -1;
@@ -257,6 +265,11 @@ app.prepare().then(() => {
                     if (room.players.length === 0) {
                         rooms.delete(roomId);
                         console.log(`[Server] Room ${roomId} deleted (empty)`);
+                    } else {
+                        // Reset room state so the remaining player goes back to Waiting
+                        room.status = 'waiting';
+                        room.countdownStarted = false;
+                        io.to(roomId).emit('joined-room-info', { playerCount: room.players.length });
                     }
                     break;
                 }
