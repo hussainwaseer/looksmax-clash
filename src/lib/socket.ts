@@ -1,29 +1,27 @@
 import { io, Socket } from "socket.io-client";
 
 const getSocketUrl = () => {
-    // 1. Check for environment variable (production)
-    if (process.env.NEXT_PUBLIC_SOCKET_URL) return process.env.NEXT_PUBLIC_SOCKET_URL;
-
     if (typeof window !== "undefined") {
-        // 2. Check for manual override in localStorage (diagnostic tool)
+        // 1. Check for manual override in localStorage (diagnostic tool)
         const override = localStorage.getItem("backend_url");
         if (override) return override;
 
         const hostname = window.location.hostname;
         const port = window.location.port;
 
-        // 3. Handle IP address (LAN testing) — use same port, single-port server
+        // 2. Handle IP address (LAN testing) — use same port, single-port server
         if (hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) {
             return `http://${hostname}:${port || 3000}`;
         }
 
-        // 4. Handle custom domains (ngrok) — same origin, let socket.io resolve
+        // 3. Handle custom domains (Railway / ngrok / Vercel) — same origin
         if (hostname !== "localhost") {
             return window.location.origin;
         }
     }
-    // 5. Default local development fallback (single-port server on 3000)
-    return "http://localhost:3000";
+
+    // 4. Default local development fallback
+    return process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3000";
 };
 
 export const socket: Socket = io(getSocketUrl(), {
