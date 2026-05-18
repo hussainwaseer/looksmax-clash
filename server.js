@@ -191,14 +191,18 @@ app.prepare().then(() => {
 
             socket.join(roomId);
 
-            // Send info to the joiner immediately
-            // Offerer is always the first player in the room
+            // Find opponent (the other player already in room)
+            const opponent = room.players.find(p => p.id !== socket.id);
             const offerId = room.players[0].id;
+
+            // Send full join info — include any already-stored opponent data
             socket.emit('joined-room-info', {
                 roomId,
                 playerCount: room.players.length,
                 status: room.status,
                 isOfferer: offerId === socket.id,
+                opponentUsername: opponent?.username || null,
+                opponentElo: opponent?.elo || null,
             });
 
             // Broadcast update to the whole room
@@ -210,12 +214,21 @@ app.prepare().then(() => {
             process.stdout.write(`[Server] ${socket.id} joined room ${roomId} (${room.players.length}/2)\n`);
 
             if (room.players.length === 2) {
-                // IMPORTANT: Re-emitting these ensures sync even if events were missed during navigation
                 io.to(roomId).emit('room-ready');
-                // The first player is always the offerer
                 io.to(offerId).emit('should-create-offer', { roomId });
-                // Hard fallback: force-start after 25s if still stuck
                 scheduleHardStart(roomId);
+            }
+        });
+
+        // ── Request opponent info (poll fallback) ────────────────────────────
+        socket.on('request-opponent-info', (roomId) => {
+            roomId = String(roomId).toUpperCase().trim();
+            if (!rooms.has(roomId)) return;
+            const room = rooms.get(roomId);
+            const opponent = room.players.find(p => p.id !== socket.id && p.username);
+            if (opponent) {
+                socket.emit('opponent-info', { username: opponent.username, elo: opponent.elo });
+                console.log(`[Server] Poll reply opponent-info to ${socket.id}: ${opponent.username}`);
             }
         });
 

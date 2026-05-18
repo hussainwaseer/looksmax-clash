@@ -375,7 +375,14 @@ export default function BattlePage() {
             // Re-broadcast our info so the newly joined opponent receives it
             if (!isSpectator) socket.emit("player-info", { roomId, username: profile.username, elo: profile.elo });
         };
-        const onJoinedInfo = (d: any) => setPlayerCount(d.playerCount);
+        const onJoinedInfo = (d: any) => {
+            setPlayerCount(d.playerCount);
+            if (d.opponentUsername) {
+                setOppUsername(d.opponentUsername);
+                setOppElo(d.opponentElo);
+                console.log("[Client] Joined info gave opponent:", d.opponentUsername);
+            }
+        };
         const onRoomReady = async () => {
             setPlayerCount(2);
             if (!isSpectator) {
@@ -448,8 +455,6 @@ export default function BattlePage() {
         socket.on("opponent-info", onOppInfo);
         socket.on("player-left", onPlayerLeft);
         socket.emit("join-room", roomId);
-        // Share our info so opponent can display our name/elo
-        if (!isSpectator) socket.emit("player-info", { roomId, username: profile.username, elo: profile.elo });
 
         return () => {
             socket.off("player-joined", onPlayerJoined);
@@ -464,6 +469,30 @@ export default function BattlePage() {
             socket.off("joined-as-spectator", onSpectator);
         };
     }, [mounted, socket, roomId, buildPC, startCamera, sendOffer, isSpectator]);
+
+    // 1. Emit our info but ONLY when it's fully loaded (not Guest unless truly guest)
+    useEffect(() => {
+        if (!mounted || isSpectator || !roomId || !socket) return;
+        // Wait until UserContext is no longer loading and profile is assigned
+        if (profile.username) {
+            console.log("[Client] Sending updated player info:", profile.username);
+            socket.emit("player-info", { roomId, username: profile.username, elo: profile.elo });
+        }
+    }, [mounted, isSpectator, roomId, socket, profile.username, profile.elo]);
+
+    // 2. Poll fallback if opponent info is missing
+    useEffect(() => {
+        if (playerCount < 2 || isSpectator || oppUsername) return;
+        const timeouts = [1000, 3000, 5000].map(delay =>
+            setTimeout(() => {
+                if (!oppUsername) {
+                    console.log("[Client] Polling for opponent info...");
+                    socket.emit("request-opponent-info", roomId);
+                }
+            }, delay)
+        );
+        return () => timeouts.forEach(clearTimeout);
+    }, [playerCount, isSpectator, oppUsername, roomId, socket]);
 
     // Send ready when face is detected and opponent has joined
     useEffect(() => {
