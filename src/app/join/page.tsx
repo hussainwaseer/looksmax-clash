@@ -72,8 +72,6 @@ export default function JoinRoom() {
 
         socket.emit("join-room", trimmed);
 
-        socket.emit("join-room", trimmed);
-
         setTimeout(() => {
             if (loading) {
                 setError(prev => prev ?? "Connection timed out. Check the room code and try again.");

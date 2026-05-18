@@ -260,6 +260,18 @@ app.prepare().then(() => {
             console.log(`[Server] ${socket.id} shared score in ${roomId}: ${metrics.overall}`);
         });
 
+        // ── Player Info (username + elo shared at battle start) ───────────────
+        socket.on('player-info', ({ roomId, username, elo }) => {
+            roomId = String(roomId).toUpperCase().trim();
+            if (!rooms.has(roomId)) return;
+            const room = rooms.get(roomId);
+            const player = room.players.find(p => p.id === socket.id);
+            if (player) { player.username = username; player.elo = elo; }
+            // Relay to everyone else in the room
+            socket.to(roomId).emit('opponent-info', { username, elo });
+            console.log(`[Server] player-info from ${socket.id} in ${roomId}: ${username} (${elo} ELO)`);
+        });
+
         // ── Disconnect ────────────────────────────────────────────────────────
         socket.on('disconnect', () => {
             console.log('[Server] User disconnected:', socket.id);

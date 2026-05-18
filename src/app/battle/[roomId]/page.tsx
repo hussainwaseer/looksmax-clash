@@ -274,6 +274,7 @@ export default function BattlePage() {
     const [localSnapshot, setLocalSnapshot] = useState<string | null>(null);
     const [isSpectator, setIsSpectator] = useState(false);
     const [oppElo, setOppElo] = useState<number | null>(null);
+    const [oppUsername, setOppUsername] = useState<string | null>(null);
     const [authOpen, setAuthOpen] = useState(false);
     const [connLog, setConnLog] = useState<string>("Waiting...");
     const [iceCount, setIceCount] = useState(0);
@@ -418,6 +419,10 @@ export default function BattlePage() {
             setOppScores(metrics);
             if (elo) setOppElo(elo);
         };
+        const onOppInfo = ({ username, elo }: { username: string, elo: number }) => {
+            setOppUsername(username);
+            setOppElo(elo);
+        };
         const onSpectator = (d: any) => { setIsSpectator(true); setPlayerCount(d.playerCount); setStatus(d.status); };
         const onPlayerLeft = () => setPlayerCount(n => Math.max(0, n - 1));
 
@@ -429,8 +434,11 @@ export default function BattlePage() {
         socket.on("should-create-offer", onShouldOffer);
         socket.on("receive-signal", onSignal);
         socket.on("opponent-score", onOppScore);
+        socket.on("opponent-info", onOppInfo);
         socket.on("player-left", onPlayerLeft);
         socket.emit("join-room", roomId);
+        // Share our info so opponent can display our name/elo
+        if (!isSpectator) socket.emit("player-info", { roomId, username: profile.username, elo: profile.elo });
 
         return () => {
             socket.off("player-joined", onPlayerJoined);
@@ -440,6 +448,7 @@ export default function BattlePage() {
             socket.off("should-create-offer", onShouldOffer);
             socket.off("receive-signal", onSignal);
             socket.off("opponent-score", onOppScore);
+            socket.off("opponent-info", onOppInfo);
             socket.off("player-left", onPlayerLeft);
             socket.off("joined-as-spectator", onSpectator);
         };
@@ -561,38 +570,87 @@ export default function BattlePage() {
                 {isSpectator && <div className="bg-amber-500/20 px-3 py-1 rounded-full border border-amber-500/40 text-amber-400 text-[10px] font-black uppercase tracking-widest">Spectator Mode</div>}
             </div>
 
-            <div className="absolute top-5 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2">
+            {/* ── Top Center HUD: Timer + Dual Player Info ── */}
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 w-full max-w-sm px-4">
+
+                {/* Timer badge */}
                 <motion.div animate={urgentTimer ? { scale: [1, 1.05, 1] } : {}} transition={{ duration: 0.4, repeat: Infinity }}
-                    className={`bg-black/80 backdrop-blur-xl px-5 py-2 rounded-full border flex items-center gap-2.5 shadow-lg ${urgentTimer ? "border-red-500/60 shadow-red-900/30" : "border-white/10"}`}>
+                    className={`bg-black/80 backdrop-blur-xl px-5 py-1.5 rounded-full border flex items-center gap-2.5 shadow-lg ${urgentTimer ? "border-red-500/60 shadow-red-900/30" : "border-white/10"}`}>
                     <Timer className={`w-4 h-4 ${urgentTimer ? "text-red-500 animate-pulse" : "text-cyan-400"}`} />
                     <span className={`font-mono text-xl font-black tabular-nums ${urgentTimer ? "text-red-400" : "text-white"}`}>
                         {status === "battling" ? `${timeLeft}s` : status === "waiting" ? "--" : status === "countdown" ? "..." : "✓"}
                     </span>
                 </motion.div>
-                {/* User HUD */}
+
+                {/* Dual player info bar */}
                 {!isSpectator && (
-                    <div className="bg-white/5 backdrop-blur-sm px-4 py-1 rounded-full border border-white/10 flex items-center gap-3">
-                        <span className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">{profile.username}</span>
-                        <div className="h-3 w-px bg-white/10" />
-                        <span className="text-[10px] text-cyan-400 font-mono font-bold">{profile.elo} ELO</span>
+                    <div className="w-full bg-black/70 backdrop-blur-md border border-white/10 rounded-2xl px-3 py-2 flex items-center justify-between gap-2">
+                        {/* You */}
+                        <div className="flex flex-col items-start min-w-0">
+                            <span className="text-[9px] text-zinc-500 font-black uppercase tracking-widest">You</span>
+                            <span className="text-[11px] font-black text-white uppercase tracking-tight truncate max-w-[80px]">{profile.username}</span>
+                            <span className="text-[9px] text-cyan-400 font-mono font-bold">{profile.elo} ELO</span>
+                        </div>
+
+                        {/* VS + ELO comparison bar */}
+                        <div className="flex-1 flex flex-col items-center gap-1">
+                            <span className="text-[8px] font-black text-zinc-600 uppercase tracking-widest">VS</span>
+                            {/* ELO rating comparison bar */}
+                            {oppElo !== null && (
+                                <div className="w-full">
+                                    <div className="relative h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/8">
+                                        {(() => {
+                                            const myElo = profile.elo ?? 1000;
+                                            const theirElo = oppElo ?? 1000;
+                                            const total = myElo + theirElo;
+                                            const myPct = total > 0 ? Math.round((myElo / total) * 100) : 50;
+                                            return (
+                                                <>
+                                                    <motion.div animate={{ width: `${myPct}%` }} className="absolute left-0 top-0 h-full bg-cyan-500" />
+                                                    <motion.div animate={{ width: `${100 - myPct}%` }} className="absolute right-0 top-0 h-full bg-purple-500" />
+                                                </>
+                                            );
+                                        })()}
+                                    </div>
+                                    <div className="flex justify-between mt-0.5">
+                                        <span className="text-[7px] text-cyan-400 font-mono">{profile.elo}</span>
+                                        <span className="text-[7px] text-purple-400 font-mono">{oppElo}</span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Opponent */}
+                        <div className="flex flex-col items-end min-w-0">
+                            <span className="text-[9px] text-zinc-500 font-black uppercase tracking-widest">Opp</span>
+                            <span className="text-[11px] font-black text-purple-300 uppercase tracking-tight truncate max-w-[80px]">
+                                {oppUsername ?? "???"}
+                            </span>
+                            <span className="text-[9px] text-purple-400 font-mono font-bold">{oppElo ? `${oppElo} ELO` : "—"}</span>
+                        </div>
                     </div>
+                )}
+
+                {/* Mogging meter - shown during battle */}
+                {(status === "battling" || status === "finished") && (
+                    <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="w-full">
+                        <div className="flex justify-between mb-1">
+                            <span className={`text-[9px] font-black uppercase tracking-widest ${moggingLabel === "mogged" ? "text-red-400" : "text-zinc-600"}`}>
+                                {moggingLabel === "mogged" ? `😭 ${oppUsername ?? "opp"}` : (oppUsername ?? "opp")}
+                            </span>
+                            <span className={`text-[9px] font-black uppercase tracking-widest ${moggingLabel === "mogging" ? "text-emerald-400" : "text-zinc-600"}`}>
+                                {moggingLabel === "mogging" ? `${profile.username} 🫵` : profile.username}
+                            </span>
+                        </div>
+                        <div className="relative h-2 bg-white/5 rounded-full overflow-hidden border border-white/8">
+                            <motion.div animate={{ width: `${100 - moggingLevel}%` }} className="absolute left-0 top-0 h-full bg-red-500" />
+                            <motion.div animate={{ width: `${moggingLevel}%` }} className="absolute right-0 top-0 h-full bg-emerald-500" />
+                        </div>
+                    </motion.div>
                 )}
             </div>
 
-            {(status === "battling" || status === "finished") && (
-                <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} className="absolute top-[100px] left-1/2 -translate-x-1/2 z-40 w-full max-w-xs px-4">
-                    <div className="flex justify-between mb-1">
-                        <span className={`text-[9px] font-black uppercase tracking-widest ${moggingLabel === "mogged" ? "text-red-400" : "text-zinc-600"}`}>{moggingLabel === "mogged" ? "😭 losing" : "opp"}</span>
-                        <span className={`text-[9px] font-black uppercase tracking-widest ${moggingLabel === "mogging" ? "text-emerald-400" : "text-zinc-600"}`}>{moggingLabel === "mogging" ? "winning 🫵" : "you"}</span>
-                    </div>
-                    <div className="relative h-2 bg-white/5 rounded-full overflow-hidden border border-white/8">
-                        <motion.div animate={{ width: `${100 - moggingLevel}%` }} className="absolute left-0 top-0 h-full bg-red-500" />
-                        <motion.div animate={{ width: `${moggingLevel}%` }} className="absolute right-0 top-0 h-full bg-emerald-500" />
-                    </div>
-                </motion.div>
-            )}
-
-            <div className="relative z-10 flex-1 grid grid-rows-2 md:grid-rows-1 grid-cols-1 md:grid-cols-2 gap-2 pt-[140px] pb-2 px-2 min-h-0">
+            <div className="relative z-10 flex-1 grid grid-rows-2 md:grid-rows-1 grid-cols-1 md:grid-cols-2 gap-2 pt-[220px] pb-2 px-2 min-h-0">
                 <div className={`relative overflow-hidden rounded-2xl bg-zinc-950 min-h-0 h-full border-2 ${status === "battling" && moggingLabel === "mogging" ? "border-emerald-400/60 shadow-[0_0_40px_rgba(52,211,153,0.2)]" : "border-white/8"}`}>
                     {!isSpectator ? (
                         <>
@@ -675,6 +733,7 @@ export default function BattlePage() {
                     )}
                     <div className="absolute bottom-3 right-3 flex items-center gap-2">
                         {oppElo && <span className="bg-amber-500/20 text-amber-400 text-[8px] font-black px-2 py-0.5 rounded border border-amber-500/20">{oppElo} ELO</span>}
+                        {oppUsername && <span className="bg-purple-500/20 text-purple-300 text-[8px] font-black px-2 py-0.5 rounded border border-purple-500/20">{oppUsername}</span>}
                         <span className="bg-black/80 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border border-white/10">Player 2</span>
                     </div>
                 </div>

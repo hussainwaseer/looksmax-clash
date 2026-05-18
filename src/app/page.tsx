@@ -187,10 +187,10 @@ export default function LandingPage() {
                   <div className="text-xs font-bold text-zinc-500">{profile.elo} ELO • {profile.battles} BATTLES</div>
                 </div>
               </div>
-              {["Face Scan", "Join Battle"].map(item => (
-                <Link key={item} href={`/${item.toLowerCase().replace(/ /g, "")}`}
+              {[{ label: "Face Scan", href: "/scan" }, { label: "Join Battle", href: "/join" }].map(item => (
+                <Link key={item.label} href={item.href}
                   className="text-zinc-400 hover:text-white py-2 text-sm font-bold uppercase tracking-widest transition-colors border-b border-white/5"
-                  onClick={() => setMobileNavOpen(false)}>{item}</Link>
+                  onClick={() => setMobileNavOpen(false)}>{item.label}</Link>
               ))}
               <div className="flex flex-col gap-3 pt-2">
                 <Link href="/create" className="w-full py-3 bg-white text-black font-black uppercase tracking-widest rounded-xl text-center hover:bg-cyan-400 transition-colors text-sm"
