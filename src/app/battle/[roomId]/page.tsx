@@ -244,6 +244,8 @@ export default function BattlePage() {
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
     const pcRef = useRef<RTCPeerConnection | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
+    const pcPromiseRef = useRef<Promise<RTCPeerConnection | null> | null>(null);
+    const camPromiseRef = useRef<Promise<MediaStream | null> | null>(null);
     const isOfferer = useRef(false);
     const finishDone = useRef(false);
     const latestLandmarks = useRef<NLM[]>([]);
@@ -291,61 +293,68 @@ export default function BattlePage() {
         return () => clearInterval(id);
     }, [status]);
 
-    const startCamera = useCallback(async () => {
-        if (streamRef.current) return streamRef.current;
-        const s = await navigator.mediaDevices.getUserMedia({
+    const startCamera = useCallback(() => {
+        if (streamRef.current) return Promise.resolve(streamRef.current);
+        if (camPromiseRef.current) return camPromiseRef.current;
+
+        camPromiseRef.current = navigator.mediaDevices.getUserMedia({
             video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
             audio: false,
+        }).then(s => {
+            streamRef.current = s;
+            if (localVideoRef.current) localVideoRef.current.srcObject = s;
+            return s;
         }).catch(e => {
             setCamErr(e.message ?? "Camera denied");
             return null;
         });
-        if (s) {
-            streamRef.current = s;
-            if (localVideoRef.current) localVideoRef.current.srcObject = s;
-        }
-        return s;
+        return camPromiseRef.current;
     }, []);
 
     const retryRef = useRef<(() => Promise<void>) | null>(null);
     const offerRef = useRef<(() => Promise<void>) | null>(null);
 
-    const buildPC = useCallback(async () => {
-        if (pcRef.current) return pcRef.current;
-        setConnLog("Starting Camera...");
-        const s = streamRef.current || await startCamera();
-        if (!s) { setConnLog("Cam Failed"); return null; }
+    const buildPC = useCallback(() => {
+        if (pcRef.current) return Promise.resolve(pcRef.current);
+        if (pcPromiseRef.current) return pcPromiseRef.current;
 
-        setConnLog("Creating Peer...");
-        const pc = new RTCPeerConnection(ICE);
-        pcRef.current = pc;
-        s.getTracks().forEach(t => pc.addTrack(t, s));
-        pc.ontrack = e => {
-            if (e.streams && e.streams[0]) {
-                setRemoteStream(e.streams[0]);
-            } else {
-                setRemoteStream(new MediaStream([e.track]));
-            }
-            setRemoteOk(true);
-        };
-        pc.onicecandidate = e => {
-            if (e.candidate) {
-                setIceCount(c => c + 1);
-                socket.emit("send-signal", { roomId, signal: { type: "candidate", candidate: e.candidate } });
-            }
-        };
-        pc.onicegatheringstatechange = () => setConnLog(`ICE: ${pc.iceGatheringState}`);
-        pc.onsignalingstatechange = () => setConnLog(`Signaling: ${pc.signalingState}`);
-        pc.onconnectionstatechange = () => {
-            setRtcState(pc.connectionState);
-            setConnLog(`RTC: ${pc.connectionState}`);
-            if (pc.connectionState === "connected") { setRemoteOk(true); socket.emit("peer-connected", roomId); }
-            if (pc.connectionState === "failed") {
-                setConnLog("RTC: Failed - Retrying...");
-                setTimeout(() => retryRef.current?.(), 1000);
-            }
-        };
-        return pc;
+        pcPromiseRef.current = (async () => {
+            setConnLog("Starting Camera...");
+            const s = streamRef.current || await startCamera();
+            if (!s) { setConnLog("Cam Failed"); return null; }
+
+            setConnLog("Creating Peer...");
+            const pc = new RTCPeerConnection(ICE);
+            pcRef.current = pc;
+            s.getTracks().forEach(t => pc.addTrack(t, s));
+            pc.ontrack = e => {
+                if (e.streams && e.streams[0]) {
+                    setRemoteStream(e.streams[0]);
+                } else {
+                    setRemoteStream(new MediaStream([e.track]));
+                }
+                setRemoteOk(true);
+            };
+            pc.onicecandidate = e => {
+                if (e.candidate) {
+                    setIceCount(c => c + 1);
+                    socket.emit("send-signal", { roomId, signal: { type: "candidate", candidate: e.candidate } });
+                }
+            };
+            pc.onicegatheringstatechange = () => setConnLog(`ICE: ${pc.iceGatheringState}`);
+            pc.onsignalingstatechange = () => setConnLog(`Signaling: ${pc.signalingState}`);
+            pc.onconnectionstatechange = () => {
+                setRtcState(pc.connectionState);
+                setConnLog(`RTC: ${pc.connectionState}`);
+                if (pc.connectionState === "connected") { setRemoteOk(true); socket.emit("peer-connected", roomId); }
+                if (pc.connectionState === "failed") {
+                    setConnLog("RTC: Failed - Retrying...");
+                    setTimeout(() => retryRef.current?.(), 1000);
+                }
+            };
+            return pc;
+        })();
+        return pcPromiseRef.current;
     }, [socket, roomId, startCamera]);
 
     const sendOffer = useCallback(async () => {
@@ -358,7 +367,10 @@ export default function BattlePage() {
 
     const retryConnection = useCallback(async () => {
         pcRef.current?.close(); pcRef.current = null;
+        pcPromiseRef.current = null;
         setRemoteOk(false); setRtcState("new");
+        remoteDescriptionSet.current = false;
+        pendingCandidates.current = [];
         const pc = await buildPC();
         if (pc && isOfferer.current) await offerRef.current?.();
     }, [buildPC]);
