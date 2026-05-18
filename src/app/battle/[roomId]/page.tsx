@@ -260,6 +260,7 @@ export default function BattlePage() {
     const [mounted, setMounted] = useState(false);
     const [isHTTPS, setIsHTTPS] = useState(true);
     const [remoteOk, setRemoteOk] = useState(false);
+    const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
     const [rtcState, setRtcState] = useState<RTCPeerConnectionState>("new");
     const [camErr, setCamErr] = useState<string | null>(null);
     const [moggingLevel, setMoggingLevel] = useState(50);
@@ -319,18 +320,12 @@ export default function BattlePage() {
         pcRef.current = pc;
         s.getTracks().forEach(t => pc.addTrack(t, s));
         pc.ontrack = e => {
-            const vid = remoteVideoRef.current;
-            if (vid) {
-                if (e.streams && e.streams[0]) {
-                    vid.srcObject = e.streams[0];
-                } else {
-                    if (!vid.srcObject) vid.srcObject = new MediaStream();
-                    (vid.srcObject as MediaStream).addTrack(e.track);
-                }
-                // Try forcing a play
-                setTimeout(() => vid.play().catch(() => { }), 100);
-                setRemoteOk(true);
+            if (e.streams && e.streams[0]) {
+                setRemoteStream(e.streams[0]);
+            } else {
+                setRemoteStream(new MediaStream([e.track]));
             }
+            setRemoteOk(true);
         };
         pc.onicecandidate = e => {
             if (e.candidate) {
@@ -483,6 +478,17 @@ export default function BattlePage() {
         playGoSound(); vibrate([80, 40, 80]);
         setTimeout(() => { setShowParticles(true); setStatus("battling"); setTimeout(() => setShowParticles(false), 900); }, 800);
     }, [status, countdown]);
+
+    // Safely assign remote stream to video element when it becomes available
+    useEffect(() => {
+        const vid = remoteVideoRef.current;
+        if (vid && remoteStream) {
+            if (vid.srcObject !== remoteStream) {
+                vid.srcObject = remoteStream;
+                vid.play().catch(() => { });
+            }
+        }
+    }, [remoteStream, status]);
 
     useEffect(() => {
         if (status !== "battling") return;
