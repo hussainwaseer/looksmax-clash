@@ -370,9 +370,20 @@ export default function BattlePage() {
         if (!mounted || !roomId) return;
         if (!isSpectator) startCamera();
 
-        const onPlayerJoined = (d: any) => setPlayerCount(d.playerCount);
+        const onPlayerJoined = (d: any) => {
+            setPlayerCount(d.playerCount);
+            // Re-broadcast our info so the newly joined opponent receives it
+            if (!isSpectator) socket.emit("player-info", { roomId, username: profile.username, elo: profile.elo });
+        };
         const onJoinedInfo = (d: any) => setPlayerCount(d.playerCount);
-        const onRoomReady = async () => { setPlayerCount(2); if (!isSpectator) await buildPC(); };
+        const onRoomReady = async () => {
+            setPlayerCount(2);
+            if (!isSpectator) {
+                await buildPC();
+                // Ensure opponent gets our info (handles simultaneous matchmaking joins)
+                socket.emit("player-info", { roomId, username: profile.username, elo: profile.elo });
+            }
+        };
         const onCountdown = () => setStatus("countdown");
         const onShouldOffer = async () => { if (!isSpectator) { isOfferer.current = true; await sendOffer(); } };
         const onSignal = async ({ signal }: any) => {

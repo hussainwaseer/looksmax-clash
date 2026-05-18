@@ -269,6 +269,13 @@ app.prepare().then(() => {
             if (player) { player.username = username; player.elo = elo; }
             // Relay to everyone else in the room
             socket.to(roomId).emit('opponent-info', { username, elo });
+            // Also replay any already-stored opponent info back to THIS sender
+            // (fixes race condition where Player 1 sent info before Player 2 joined)
+            const opponent = room.players.find(p => p.id !== socket.id && p.username);
+            if (opponent) {
+                socket.emit('opponent-info', { username: opponent.username, elo: opponent.elo });
+                console.log(`[Server] Replayed opponent info to late joiner ${socket.id}: ${opponent.username}`);
+            }
             console.log(`[Server] player-info from ${socket.id} in ${roomId}: ${username} (${elo} ELO)`);
         });
 
