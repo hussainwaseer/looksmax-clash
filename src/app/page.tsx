@@ -61,7 +61,11 @@ export default function LandingPage() {
       const roomId = typeof payload === "string" ? payload : payload.roomId;
       router.push(`/battle/${roomId}`);
     });
-    return () => { socket.off("match-found"); };
+    return () => {
+      socket.off("match-found");
+      // If we unmount while searching (e.g. navigating to another page), remove from server queue
+      socket.emit("cancel-match");
+    };
   }, [socket, router]);
 
   const handleMouseMove = (e: React.MouseEvent) => {

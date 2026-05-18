@@ -58,6 +58,7 @@ export default function JoinRoom() {
             socket.off("match-queued");
             socket.off("match-found");
             socket.off("match-cancelled");
+            socket.emit("cancel-match"); // Cleanup ghost from queue if we navigate away
         };
     }, [socket, router, mounted]);
 

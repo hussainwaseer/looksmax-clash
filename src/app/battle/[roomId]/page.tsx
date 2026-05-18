@@ -320,9 +320,15 @@ export default function BattlePage() {
         s.getTracks().forEach(t => pc.addTrack(t, s));
         pc.ontrack = e => {
             const vid = remoteVideoRef.current;
-            if (vid && e.streams[0]) {
-                vid.srcObject = e.streams[0];
-                vid.play().catch(() => { });
+            if (vid) {
+                if (e.streams && e.streams[0]) {
+                    vid.srcObject = e.streams[0];
+                } else {
+                    if (!vid.srcObject) vid.srcObject = new MediaStream();
+                    (vid.srcObject as MediaStream).addTrack(e.track);
+                }
+                // Try forcing a play
+                setTimeout(() => vid.play().catch(() => { }), 100);
                 setRemoteOk(true);
             }
         };
