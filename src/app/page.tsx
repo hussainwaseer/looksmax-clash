@@ -55,8 +55,10 @@ export default function LandingPage() {
 
   useEffect(() => {
     if (!socket) return;
-    socket.on("match-found", (roomId: string) => {
+    socket.on("match-found", (payload: any) => {
       setIsSearching(false);
+      // Payload can be either a string or an object { roomId, playerCount } depending on where it comes from
+      const roomId = typeof payload === "string" ? payload : payload.roomId;
       router.push(`/battle/${roomId}`);
     });
     return () => { socket.off("match-found"); };
